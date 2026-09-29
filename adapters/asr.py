@@ -1,5 +1,6 @@
 """
 adapters/asr.py — ASR using bodhan-ai/indic-transcribe-flex
+Uses the model's own custom loader (load_nemo.py) shipped in the repo.
 """
 from __future__ import annotations
 
@@ -7,9 +8,9 @@ import asyncio
 import logging
 import os
 import subprocess
+import sys
 import tempfile
-from dataclasses import dataclass
-from pathlib import Path
+from dataclasses import dataclass, field
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -26,9 +27,9 @@ class WordResult:
 @dataclass
 class AuthoritativeTranscript:
     text: str
-    words: list
-    language: Optional[str]
-    avg_confidence: float
+    words: list = field(default_factory=list)
+    language: Optional[str] = None
+    avg_confidence: float = 0.95
 
 
 class ASRError(Exception):
@@ -37,34 +38,43 @@ class ASRError(Exception):
 
 class IndicTranscribeFlexASR:
     """
-    ASR using bodhan-ai/indic-transcribe-flex via NeMo.
-    Supports Hindi, English, Hinglish and 27 Indian languages.
+    ASR using bodhan-ai/indic-transcribe-flex.
+    Uses the model's own custom loader (load_nemo.py) shipped inside the repo.
     """
 
     def __init__(
         self,
         model_name: str = "bodhan-ai/indic-transcribe-flex",
         device: str = "cuda",
+        source_lang: str = "hi",
+        target_lang: str = "hi",
     ):
         self.model_name = model_name
         self.device = device
+        self.source_lang = source_lang
+        self.target_lang = target_lang
         self._model = None
+        self._model_dir = None
 
     def _load_model(self):
         if self._model is not None:
             return self._model
+
         logger.info("Loading ASR model: %s", self.model_name)
-        try:
-            import nemo.collections.asr as nemo_asr
-            self._model = nemo_asr.models.ASRModel.from_pretrained(self.model_name)
-            if self.device == "cuda":
-                import torch
-                if torch.cuda.is_available():
-                    self._model = self._model.cuda()
-            logger.info("ASR model loaded successfully.")
-        except Exception as e:
-            logger.error("Failed to load ASR model: %s", e)
-            raise ASRError(f"Failed to load ASR model: {e}")
+
+        from huggingface_hub import snapshot_download
+        hf_token = os.environ.get("HF_TOKEN")
+        self._model_dir = snapshot_download(self.model_name, token=hf_token)
+        logger.info("Model downloaded to: %s", self._model_dir)
+
+        # Use the model's own loader shipped inside the repo
+        nemo_loader_path = os.path.join(self._model_dir, "nemo")
+        if nemo_loader_path not in sys.path:
+            sys.path.insert(0, nemo_loader_path)
+
+        from load_nemo import load_nemo_model
+        self._model = load_nemo_model(self._model_dir)
+        logger.info("ASR model loaded successfully.")
         return self._model
 
     async def transcribe_authoritative(
@@ -74,12 +84,13 @@ class IndicTranscribeFlexASR:
         language: Optional[str] = None,
         contextual_biasing: Optional[list] = None,
     ) -> AuthoritativeTranscript:
+
         loop = asyncio.get_event_loop()
 
         def _run():
             model = self._load_model()
 
-            # Write raw input to temp file and convert to 16kHz WAV via ffmpeg
+            # Write raw audio to temp file and convert to 16kHz mono WAV
             with tempfile.NamedTemporaryFile(suffix=".input", delete=False) as tf:
                 tf.write(audio_bytes)
                 raw_path = tf.name
@@ -88,12 +99,30 @@ class IndicTranscribeFlexASR:
             try:
                 subprocess.run(
                     ["ffmpeg", "-y", "-i", raw_path,
-                     "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", wav_path],
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True
+                     "-ar", "16000", "-ac", "1",
+                     "-c:a", "pcm_s16le", wav_path],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=True,
                 )
-                results = model.transcribe([wav_path])
-                text = results[0] if results else ""
-                return str(text).strip()
+
+                src_lang = language or self.source_lang
+                tgt_lang = language or self.target_lang
+
+                results = model.transcribe(
+                    [wav_path],
+                    source_lang=src_lang,
+                    target_lang=tgt_lang,
+                    pnc="yes",
+                )
+
+                if isinstance(results, list) and results:
+                    r = results[0]
+                    text = r.text if hasattr(r, "text") else str(r)
+                else:
+                    text = str(results)
+
+                return text.strip()
             finally:
                 for p in (raw_path, wav_path):
                     try:
@@ -104,14 +133,13 @@ class IndicTranscribeFlexASR:
         try:
             text = await loop.run_in_executor(None, _run)
         except Exception as e:
-            logger.error("ASR transcription error: %s", e)
+            logger.error("ASR error: %s", e)
             raise ASRError(str(e))
 
         logger.info("ASR transcript: '%s'", text[:80])
         return AuthoritativeTranscript(
             text=text,
-            words=[],
-            language=language or "hi",
+            language=language or self.source_lang,
             avg_confidence=0.95,
         )
 
@@ -134,6 +162,8 @@ def get_asr_adapter() -> IndicTranscribeFlexASR:
         _adapter = IndicTranscribeFlexASR(
             model_name="bodhan-ai/indic-transcribe-flex",
             device="cuda",
+            source_lang="hi",
+            target_lang="hi",
         )
     return _adapter
 
