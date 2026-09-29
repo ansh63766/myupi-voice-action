@@ -1,0 +1,6 @@
+# Dev/testing dependencies only — not needed in production
+-r requirements.txt
+
+pytest==8.4.1
+pytest-asyncio==0.26.0
+pytest-cov==6.1.0

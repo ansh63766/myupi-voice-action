@@ -1,0 +1,1104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MyUPI Assistant</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --danger: #dc2626;
+            --success: #16a34a;
+            --warning: #ea580c;
+            --surface: #ffffff;
+            --bg: #f8fafc;
+            --text: #1e293b;
+            --muted: #64748b;
+            --border: #e2e8f0;
+            --shadow-sm: 0 1px 2px 0 rgba(0,0,0,0.05);
+            --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
+            --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
+            --shadow-xl: 0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+        /* ── Animations ─────────────────────────────────────────────── */
+        @keyframes slideInUp   { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+        @keyframes fadeIn      { from { opacity:0; } to { opacity:1; } }
+        @keyframes bounce      { 0%,80%,100%{transform:scale(0);} 40%{transform:scale(1);} }
+        @keyframes pulse       { 0%{transform:scale(1);box-shadow:0 0 0 0 rgba(220,38,38,0.4);} 70%{transform:scale(1);box-shadow:0 0 0 12px rgba(220,38,38,0);} 100%{transform:scale(1);box-shadow:0 0 0 0 rgba(220,38,38,0);} }
+        @keyframes slideInDown { from{opacity:0;transform:translateY(-20px);}to{opacity:1;transform:translateY(0);} }
+        @keyframes scaleIn     { from{opacity:0;transform:scale(0.92);}to{opacity:1;transform:scale(1);} }
+
+        /* ── Header ──────────────────────────────────────────────────── */
+        header { background:white; color:var(--text); padding:14px 24px; display:flex; align-items:center; gap:12px; box-shadow:var(--shadow-sm); z-index:10; border-bottom:1px solid var(--border); }
+        header h1 { font-size:18px; font-weight:600; background:linear-gradient(135deg,var(--primary),#8b5cf6); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+        .lang-select { margin-left:auto; }
+        .lang-select select { background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:6px 12px; cursor:pointer; font-size:13px; outline:none; transition:all 0.2s; font-family:'Inter',sans-serif; }
+        .lang-select select:hover { border-color:var(--primary); }
+        #user-badge { font-size:13px; margin-left:12px; background:#e0e7ff; color:var(--primary); padding:4px 12px; border-radius:12px; font-weight:500; }
+
+        /* ── Login overlay ───────────────────────────────────────────── */
+        #login-screen { position:fixed; inset:0; background:rgba(15,23,42,0.4); display:flex; align-items:center; justify-content:center; z-index:100; backdrop-filter:blur(8px); animation:fadeIn 0.3s ease-out; }
+        .login-card { background:white; border-radius:20px; padding:40px; width:360px; box-shadow:var(--shadow-lg); animation:slideInUp 0.4s ease-out; }
+        .login-card h2 { font-size:24px; margin-bottom:8px; color:var(--text); font-weight:600; }
+        .login-card .subtitle { font-size:14px; color:var(--muted); margin-bottom:28px; }
+        .login-card .demo-creds { background:#f1f5f9; border-radius:10px; padding:14px; font-size:13px; color:var(--muted); margin-bottom:24px; line-height:1.6; border:1px solid var(--border); }
+        .login-card .demo-creds strong { color:var(--text); }
+        .login-card input { width:100%; border:1px solid var(--border); background:#f8fafc; border-radius:10px; padding:12px 16px; font-size:15px; margin-bottom:16px; outline:none; transition:all 0.2s; font-family:'Inter',sans-serif; }
+        .login-card input:focus { border-color:var(--primary); background:white; box-shadow:0 0 0 3px rgba(37,99,235,0.1); }
+        .btn { background:var(--primary); color:white; border:none; border-radius:10px; padding:12px 20px; font-size:15px; cursor:pointer; width:100%; font-weight:500; transition:all 0.2s; font-family:'Inter',sans-serif; }
+        .btn:hover { background:var(--primary-hover); transform:translateY(-1px); }
+        .login-error { color:var(--danger); font-size:13px; margin-top:12px; font-weight:500; text-align:center; }
+
+        /* ── Chat area ───────────────────────────────────────────────── */
+        #chat-container { flex:1; min-height: 0; display:flex; flex-direction:column; max-width:860px; width:100%; margin:0 auto; background:white; box-shadow:var(--shadow-md); border-left:1px solid var(--border); border-right:1px solid var(--border); }
+        #messages { flex:1; overflow-y:auto; padding:24px 20px; display:flex; flex-direction:column; gap:16px; scroll-behavior:smooth; }
+
+        /* ── Message bubbles ──────────────────────────────────────────── */
+        .msg { max-width:80%; padding:12px 18px; border-radius:18px; font-size:15px; line-height:1.5; animation:slideInUp 0.3s ease-out forwards; }
+        .msg.user      { align-self:flex-end; background:var(--primary); color:white; border-bottom-right-radius:4px; box-shadow:var(--shadow-sm); }
+        .msg.assistant { align-self:flex-start; background:#f1f5f9; color:var(--text); border-bottom-left-radius:4px; border:1px solid var(--border); box-shadow:var(--shadow-sm); }
+        .msg.error     { align-self:flex-start; background:#fef2f2; color:var(--danger); border:1px solid #fecaca; border-bottom-left-radius:4px; }
+
+        /* ── Confirmation card ────────────────────────────────────────── */
+        .confirm-card { align-self:flex-start; background:white; border:1px solid #fcd34d; border-top:4px solid #fbbf24; border-radius:16px; padding:20px; max-width:90%; box-shadow:var(--shadow-md); animation:slideInUp 0.3s ease-out forwards; }
+        .confirm-card .card-title { font-weight:600; font-size:12px; color:#d97706; text-transform:uppercase; letter-spacing:0.8px; margin-bottom:12px; display:flex; align-items:center; gap:8px; }
+        .confirm-card .card-text { font-size:15px; margin-bottom:20px; color:var(--text); line-height:1.5; }
+        .confirm-actions { display:flex; gap:10px; }
+        .btn-confirm { background:var(--success); color:white; border:none; border-radius:10px; padding:10px 24px; cursor:pointer; font-size:14px; font-weight:500; transition:all 0.2s; font-family:'Inter',sans-serif; }
+        .btn-confirm:hover { background:#15803d; transform:translateY(-1px); box-shadow:var(--shadow-sm); }
+        .btn-confirm:disabled { opacity:0.5; cursor:not-allowed; transform:none; }
+        .btn-cancel { background:white; color:var(--muted); border:1px solid var(--border); border-radius:10px; padding:10px 24px; cursor:pointer; font-size:14px; font-weight:500; transition:all 0.2s; font-family:'Inter',sans-serif; }
+        .btn-cancel:hover { background:#f8fafc; color:var(--text); }
+        .btn-cancel:disabled { opacity:0.5; cursor:not-allowed; }
+
+        /* ── Disambiguation ───────────────────────────────────────────── */
+        .disambig-card { align-self:flex-start; background:white; border:1px solid var(--border); border-radius:16px; padding:18px; max-width:90%; box-shadow:var(--shadow-md); animation:slideInUp 0.3s ease-out forwards; }
+        .disambig-card .card-title { font-weight:600; font-size:14px; color:var(--primary); margin-bottom:12px; }
+        .disambig-option { display:flex; align-items:center; padding:12px 16px; border-radius:10px; cursor:pointer; border:1px solid var(--border); margin-bottom:8px; transition:all 0.2s; background:#f8fafc; }
+        .disambig-option:hover { background:#eff6ff; border-color:#bfdbfe; transform:translateY(-1px); box-shadow:var(--shadow-sm); }
+        .disambig-label { font-size:14px; font-weight:500; color:var(--text); }
+        .disambig-score { font-size:12px; color:var(--primary); margin-left:auto; background:#dbeafe; padding:3px 8px; border-radius:12px; font-weight:500; }
+
+        /* ── Deep link button ─────────────────────────────────────────── */
+        .deeplink-btn { display:inline-flex; align-items:center; gap:8px; background:var(--text); color:white; border-radius:10px; padding:10px 20px; text-decoration:none; font-size:14px; margin-top:12px; cursor:pointer; border:none; font-weight:500; transition:all 0.2s; }
+        .deeplink-btn:hover { background:#0f172a; transform:translateY(-1px); box-shadow:var(--shadow-sm); }
+        .deeplink-btn.pin-required { background:linear-gradient(135deg,#7c3aed,#2563eb); }
+        .deeplink-btn.pin-required:hover { background:linear-gradient(135deg,#6d28d9,#1d4ed8); }
+
+        /* ── Tables ───────────────────────────────────────────────────── */
+        .data-table { width:100%; border-collapse:separate; border-spacing:0; font-size:13px; margin-top:10px; border-radius:10px; overflow:hidden; border:1px solid var(--border); }
+        .data-table th { background:#f8fafc; padding:12px; text-align:left; font-weight:600; color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:0.5px; border-bottom:1px solid var(--border); }
+        .data-table td { padding:12px; border-bottom:1px solid var(--border); background:white; }
+        .data-table tr:last-child td { border-bottom:none; }
+        .data-table tr:hover td { background:#f8fafc; }
+        .status-pill { display:inline-flex; align-items:center; justify-content:center; padding:4px 10px; border-radius:12px; font-size:11px; font-weight:600; letter-spacing:0.3px; text-transform:uppercase; }
+        .status-SUCCESS,.status-ACTIVE { background:#dcfce7; color:#166534; }
+        .status-FAILED  { background:#fee2e2; color:#991b1b; }
+        .status-PAUSED  { background:#fef3c7; color:#92400e; }
+        .status-PENDING { background:#ffedd5; color:#9a3412; }
+        .chargeback-chip { background:white; color:var(--danger); border:1px solid #fecaca; border-radius:6px; padding:4px 8px; font-size:11px; cursor:pointer; font-weight:500; transition:all 0.2s; }
+        .chargeback-chip:hover { background:#fef2f2; border-color:var(--danger); }
+
+        /* ── Input area ───────────────────────────────────────────────── */
+        #input-area { padding:16px 20px; background:white; border-top:1px solid var(--border); display:flex; gap:12px; align-items:flex-end; z-index:10; box-shadow:0 -4px 6px -1px rgba(0,0,0,0.02); }
+        #msg-input { flex:1; border:1px solid var(--border); background:#f8fafc; border-radius:20px; padding:12px 20px; font-size:15px; resize:none; outline:none; max-height:120px; transition:all 0.2s; font-family:'Inter',sans-serif; line-height:1.5; }
+        #msg-input:focus { border-color:var(--primary); background:white; box-shadow:0 0 0 3px rgba(37,99,235,0.1); }
+        .mic-btn { background:#f1f5f9; color:var(--text); border:1px solid var(--border); border-radius:50%; width:48px; height:48px; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:20px; flex-shrink:0; transition:all 0.2s; }
+        .mic-btn:hover { background:#e2e8f0; transform:scale(1.05); }
+        .mic-btn.recording { background:var(--danger); color:white; border-color:var(--danger); animation:pulse 1.5s infinite; }
+        .send-btn { background:var(--primary); color:white; border:none; border-radius:50%; width:48px; height:48px; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:all 0.2s; }
+        .send-btn:hover { background:var(--primary-hover); transform:scale(1.05); }
+        .send-btn:disabled { background:#cbd5e1; cursor:not-allowed; transform:none; }
+        .send-btn svg { width:20px; height:20px; fill:white; margin-left:2px; }
+
+        /* ── Quick chips ──────────────────────────────────────────────── */
+        .quick-examples { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+        .quick-chip { font-size:13px; background:white; color:var(--primary); border-radius:16px; padding:6px 14px; cursor:pointer; border:1px solid #bfdbfe; transition:all 0.2s; white-space:nowrap; font-weight:500; box-shadow:var(--shadow-sm); }
+        .quick-chip:hover { background:#eff6ff; border-color:var(--primary); transform:translateY(-1px); }
+
+        /* ── Typing indicator ─────────────────────────────────────────── */
+        .typing { display:flex; gap:5px; padding:14px 18px; align-items:center; }
+        .typing span { width:6px; height:6px; background:var(--muted); border-radius:50%; animation:bounce 1.4s infinite ease-in-out both; }
+        .typing span:nth-child(1){animation-delay:-0.32s;}
+        .typing span:nth-child(2){animation-delay:-0.16s;}
+
+        /* ── Scrollbar ────────────────────────────────────────────────── */
+        #messages::-webkit-scrollbar { width:6px; }
+        #messages::-webkit-scrollbar-track { background:transparent; }
+        #messages::-webkit-scrollbar-thumb { background:#cbd5e1; border-radius:10px; }
+        #messages::-webkit-scrollbar-thumb:hover { background:#94a3b8; }
+
+        /* ══════════════════════════════════════════════════════════════
+           APP SCREEN MODAL (simulates the BHIM/PhonePe in-app screen)
+           ══════════════════════════════════════════════════════════════ */
+        #app-screen-overlay {
+            position: fixed; inset: 0;
+            background: rgba(15,23,42,0.6);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 200;
+            backdrop-filter: blur(6px);
+            animation: fadeIn 0.25s ease-out;
+        }
+        #app-screen-overlay.visible { display: flex; }
+
+        .app-screen-phone {
+            width: 380px;
+            max-height: 90vh;
+            overflow-y: auto;
+            background: white;
+            border-radius: 32px;
+            box-shadow: var(--shadow-xl), 0 0 0 8px rgba(0,0,0,0.15);
+            animation: scaleIn 0.3s ease-out;
+            position: relative;
+        }
+
+        /* Phone chrome */
+        .phone-chrome {
+            background: #111827;
+            border-radius: 32px 32px 0 0;
+            padding: 14px 20px 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .phone-chrome .back-btn {
+            background: rgba(255,255,255,0.1);
+            border: none;
+            color: white;
+            border-radius: 50%;
+            width: 32px; height: 32px;
+            cursor: pointer;
+            font-size: 16px;
+            display: flex; align-items: center; justify-content: center;
+            transition: all 0.2s;
+        }
+        .phone-chrome .back-btn:hover { background: rgba(255,255,255,0.2); }
+        .phone-chrome .app-name { color: white; font-size: 14px; font-weight: 600; }
+        .phone-chrome .app-logo { margin-left: auto; font-size: 20px; }
+
+        /* Screen body */
+        .screen-body { padding: 24px 24px 32px; }
+        .screen-badge {
+            display: inline-flex; align-items: center; gap: 6px;
+            background: #eff6ff; color: var(--primary);
+            border: 1px solid #bfdbfe;
+            border-radius: 20px; padding: 4px 12px;
+            font-size: 12px; font-weight: 600;
+            margin-bottom: 20px;
+            text-transform: uppercase; letter-spacing: 0.5px;
+        }
+        .screen-title { font-size: 22px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+        .screen-subtitle { font-size: 14px; color: var(--muted); margin-bottom: 24px; line-height: 1.5; }
+
+        /* Detail rows */
+        .detail-row { display: flex; justify-content: space-between; align-items: center; padding: 14px 0; border-bottom: 1px solid var(--border); }
+        .detail-row:last-of-type { border-bottom: none; }
+        .detail-label { font-size: 13px; color: var(--muted); font-weight: 500; }
+        .detail-value { font-size: 14px; font-weight: 600; color: var(--text); text-align: right; }
+        .detail-value.amount { font-size: 18px; color: var(--success); }
+        .detail-value.danger { color: var(--danger); }
+
+        /* Warning box */
+        .screen-warning {
+            background: #fffbeb; border: 1px solid #fde68a;
+            border-radius: 12px; padding: 14px 16px;
+            font-size: 13px; color: #92400e; line-height: 1.5;
+            margin: 20px 0;
+        }
+        .screen-warning strong { display: block; margin-bottom: 4px; font-size: 14px; }
+
+        /* Screen action buttons */
+        .screen-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 24px; }
+        .screen-btn { width: 100%; border: none; border-radius: 14px; padding: 14px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: 'Inter', sans-serif; }
+        .screen-btn.primary { background: var(--primary); color: white; }
+        .screen-btn.primary:hover { background: var(--primary-hover); transform: translateY(-1px); box-shadow: var(--shadow-md); }
+        .screen-btn.danger { background: var(--danger); color: white; }
+        .screen-btn.danger:hover { background: #b91c1c; transform: translateY(-1px); box-shadow: var(--shadow-md); }
+        .screen-btn.secondary { background: #f1f5f9; color: var(--text); border: 1px solid var(--border); }
+        .screen-btn.secondary:hover { background: #e2e8f0; }
+
+        /* ── PIN pad ──────────────────────────────────────────────────── */
+        .pin-section { text-align: center; margin: 8px 0 24px; }
+        .pin-label { font-size: 13px; color: var(--muted); margin-bottom: 14px; font-weight: 500; }
+        .pin-dots { display: flex; justify-content: center; gap: 14px; margin-bottom: 28px; }
+        .pin-dot {
+            width: 16px; height: 16px;
+            border-radius: 50%;
+            border: 2px solid #cbd5e1;
+            background: transparent;
+            transition: all 0.2s;
+        }
+        .pin-dot.filled { background: var(--primary); border-color: var(--primary); transform: scale(1.1); }
+        .pin-pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; max-width: 240px; margin: 0 auto; }
+        .pin-key {
+            background: #f8fafc; border: 1px solid var(--border);
+            border-radius: 14px; padding: 14px 8px;
+            font-size: 22px; font-weight: 600;
+            cursor: pointer; transition: all 0.2s;
+            text-align: center; user-select: none;
+        }
+        .pin-key:hover { background: #eff6ff; border-color: #bfdbfe; transform: scale(1.05); }
+        .pin-key:active { transform: scale(0.95); }
+        .pin-key.wide { grid-column: span 1; }
+        .pin-key.backspace { font-size: 18px; }
+        .pin-key.submit { background: var(--primary); color: white; border-color: var(--primary); font-size: 14px; font-weight: 700; }
+        .pin-key.submit:hover { background: var(--primary-hover); }
+
+        /* PIN success state */
+        .pin-success { text-align: center; padding: 20px; animation: scaleIn 0.4s ease-out; }
+        .pin-success .check-icon { font-size: 52px; margin-bottom: 12px; }
+        .pin-success h3 { font-size: 20px; font-weight: 700; color: var(--success); margin-bottom: 6px; }
+        .pin-success p { font-size: 14px; color: var(--muted); }
+
+        /* Safety switch toggle */
+        .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 16px; background: #f8fafc; border-radius: 14px; border: 1px solid var(--border); margin: 16px 0; }
+        .toggle-label { font-size: 15px; font-weight: 600; }
+        .toggle-switch { position: relative; width: 50px; height: 27px; }
+        .toggle-switch input { opacity: 0; width: 0; height: 0; }
+        .toggle-slider { position: absolute; inset: 0; background: #cbd5e1; border-radius: 27px; cursor: pointer; transition: 0.3s; }
+        .toggle-slider:before { content: ''; position: absolute; width: 21px; height: 21px; left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: 0.3s; box-shadow: var(--shadow-sm); }
+        input:checked + .toggle-slider { background: var(--success); }
+        input:checked + .toggle-slider:before { transform: translateX(23px); }
+
+        /* Dismiss overlay button */
+        .overlay-dismiss {
+            position: absolute; top: -14px; right: -14px;
+            background: white; border: 1px solid var(--border);
+            border-radius: 50%; width: 36px; height: 36px;
+            cursor: pointer; font-size: 16px;
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: var(--shadow-md);
+            transition: all 0.2s;
+        }
+        .overlay-dismiss:hover { background: #f8fafc; transform: scale(1.1); }
+
+        /* Prototype banner */
+        .proto-banner {
+            background: linear-gradient(135deg, #1e1b4b, #312e81);
+            color: white; text-align: center;
+            padding: 6px 0; font-size: 11px; font-weight: 500;
+            letter-spacing: 0.5px;
+        }
+
+        @media (max-width: 768px) {
+            #chat-container { border-left:none; border-right:none; }
+            .msg { max-width:90%; }
+            #input-area { padding:12px; }
+            .app-screen-phone { width:95vw; border-radius:20px; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- ── Login ─────────────────────────────────────────────────────────────── -->
+<div id="login-screen">
+    <div class="login-card">
+        <h2>🏦 MyUPI Assistant</h2>
+        <p class="subtitle">NPCI — UPI Voice + Chat Prototype</p>
+        <div class="demo-creds">
+            <strong>rahul_sharma</strong> / PIN: 1234<br>
+            <strong>priya_verma</strong> / PIN: 5678<br>
+            <strong>amit_patel</strong> / PIN: 9012
+        </div>
+        <input type="text" id="login-user" placeholder="Username" value="rahul_sharma">
+        <input type="password" id="login-pin" placeholder="PIN" value="1234">
+        <button class="btn" onclick="doLogin()">Sign In →</button>
+        <div class="login-error" id="login-error"></div>
+    </div>
+</div>
+
+<!-- ── Main ──────────────────────────────────────────────────────────────── -->
+<header>
+    <span style="font-size:26px;">💳</span>
+    <h1>MyUPI Assistant</h1>
+    <div class="lang-select">
+        <select id="lang-select">
+            <option value="en">English</option>
+            <option value="hi">हिन्दी</option>
+            <option value="hi-Latn">Hinglish</option>
+        </select>
+    </div>
+    <span id="user-badge"></span>
+</header>
+
+<div id="chat-container">
+    <div id="messages"></div>
+    <div id="input-area">
+        <div style="flex:1;display:flex;flex-direction:column;gap:6px;">
+            <div class="quick-examples" id="quick-examples">
+                <span class="quick-chip" onclick="sendQuick(this)">Show my transactions</span>
+                <span class="quick-chip" onclick="sendQuick(this)">Show my mandates</span>
+                <span class="quick-chip" onclick="sendQuick(this)">Pause Swiggy autopay</span>
+                <span class="quick-chip" onclick="sendQuick(this)">Resume Netflix</span>
+                <span class="quick-chip" onclick="sendQuick(this)">Stop Zomato mandate</span>
+                <span class="quick-chip" onclick="sendQuick(this)">What is UPI?</span>
+                <span class="quick-chip" onclick="sendQuick(this)">Raise a chargeback</span>
+            </div>
+            <textarea id="msg-input" rows="1" placeholder="Ask about your transactions, mandates, UPI..." onkeydown="handleKey(event)"></textarea>
+        </div>
+        <button class="mic-btn" onclick="toggleMic()" id="mic-btn" title="Voice input">🎤</button>
+        <button class="send-btn" onclick="sendMessage()" id="send-btn">
+            <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+        </button>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     APP SCREEN MODAL — Simulates the BHIM/PhonePe in-app screen
+     Shows for all deep-link actions (mandates, transactions, settings)
+     ══════════════════════════════════════════════════════════════════════ -->
+<div id="app-screen-overlay" onclick="handleOverlayClick(event)">
+    <div class="app-screen-phone" id="app-screen-phone">
+        <div class="proto-banner">📱 PROTOTYPE — Simulating BHIM UPI App Screen</div>
+        <div class="phone-chrome">
+            <button class="back-btn" onclick="closeAppScreen()">←</button>
+            <span class="app-name" id="screen-app-name">BHIM MyUPI</span>
+            <span class="app-logo">🏦</span>
+        </div>
+        <div class="screen-body" id="screen-body">
+            <!-- Filled dynamically by renderScreen() -->
+        </div>
+        <button class="overlay-dismiss" onclick="closeAppScreen()" title="Close">✕</button>
+    </div>
+</div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────────
+let token = null, userId = null, convId = null;
+let awaitingConfirmation = false, confirmationEventId = null;
+let awaitingDisambig = false;
+let ws = null, mediaRecorder = null, isRecording = false;
+let pinBuffer = '';
+let currentScreenData = null;
+
+// ── Login ──────────────────────────────────────────────────────────────────────
+async function doLogin() {
+    const username = document.getElementById('login-user').value.trim();
+    const pin      = document.getElementById('login-pin').value.trim();
+    document.getElementById('login-error').textContent = '';
+    try {
+        const r = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({username, pin})
+        });
+        if (!r.ok) throw new Error((await r.json()).detail || 'Login failed');
+        const data = await r.json();
+        token = data.token; userId = data.user_id;
+        const loginScreen = document.getElementById('login-screen');
+        loginScreen.style.transition = 'opacity 0.3s ease';
+        loginScreen.style.opacity = '0';
+        setTimeout(() => loginScreen.style.display = 'none', 300);
+        document.getElementById('user-badge').textContent = `👤 ${data.full_name}`;
+        await startConversation();
+        addMsg('assistant', `👋 Hi ${data.full_name.split(' ')[0]}! I'm your MyUPI assistant. I can help with transactions, AutoPay mandates, and UPI support. What can I help you with?`);
+    } catch(e) {
+        document.getElementById('login-error').textContent = e.message || 'Login failed';
+    }
+}
+
+async function startConversation() {
+    const r = await fetch('/api/conversations?token=' + token, {method: 'POST'});
+    if (!r.ok) throw new Error('Could not start conversation');
+    const data = await r.json();
+    convId = data.conversation_id;
+}
+
+// ── Messaging ─────────────────────────────────────────────────────────────────
+function sendQuick(el) {
+    document.getElementById('msg-input').value = el.textContent.trim();
+    sendMessage();
+}
+
+function handleKey(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+}
+
+async function sendMessage(msg, confirmed=false, selectedEntity=null) {
+    const input   = document.getElementById('msg-input');
+    const text    = (msg !== undefined && msg !== null) ? msg : input.value.trim();
+    if (!text && !confirmed && !selectedEntity) return;
+    if (msg === undefined || msg === null) input.value = '';
+
+    const lang = document.getElementById('lang-select').value;
+
+    if (text) addMsg('user', text);
+    const typing = addTyping();
+
+    const sendBtn = document.getElementById('send-btn');
+    sendBtn.disabled = true;
+
+    try {
+        const r = await fetch('/api/chat', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                token, conversation_id: convId,
+                message: text || '',
+                user_confirmed: confirmed,
+                selected_entity: selectedEntity,
+                language: lang,
+            })
+        });
+        if (!r.ok) {
+            const err = await r.json().catch(() => ({}));
+            throw new Error(err.detail || `Server error ${r.status}`);
+        }
+        const data = await r.json();
+        typing.remove();
+
+        if (data.error) {
+            addMsg('error', '⚠️ ' + data.error);
+        }
+
+        // Structured data (transactions/mandates table)
+        if (data.response_data && (data.response_data.transactions || data.response_data.mandates)) {
+            addStructuredResponse(data.response_text, data.response_data);
+        } else if (data.response_text && !data.confirmation_card && !data.deep_link) {
+            addMsg('assistant', data.response_text);
+        }
+
+        if (data.confirmation_card)       addConfirmationCard(data.confirmation_card);
+        if (data.disambiguation_options)  addDisambiguationCard(data.disambiguation_options);
+        if (data.deep_link)               addDeepLinkCard(data.deep_link, data.response_text, data.response_data?.mic_disabled);
+        if (data.needs_input && data.user_prompt && !data.confirmation_card && !data.disambiguation_options) {
+            addMsg('assistant', data.user_prompt);
+        }
+    } catch(e) {
+        typing.remove();
+        addMsg('error', '⚠️ ' + (e.message || 'Connection error. Please try again.'));
+    }
+    sendBtn.disabled = false;
+    scrollBottom();
+}
+
+// ── UI helpers ────────────────────────────────────────────────────────────────
+function scrollBottom() {
+    const msgs = document.getElementById('messages');
+    msgs.scrollTop = msgs.scrollHeight;
+}
+
+function addMsg(role, text) {
+    const div = document.createElement('div');
+    div.className = 'msg ' + role;
+    if (role === 'assistant') {
+        div.innerHTML = marked.parse(text);
+        // Fix paragraph margins inside markdown bubbles
+        const paras = div.querySelectorAll('p');
+        paras.forEach(p => p.style.marginBottom = '8px');
+        const lists = div.querySelectorAll('ul, ol');
+        lists.forEach(l => { l.style.marginLeft = '20px'; l.style.marginBottom = '8px'; });
+    } else {
+        div.textContent = text;
+    }
+    document.getElementById('messages').appendChild(div);
+    scrollBottom();
+    return div;
+}
+
+function addTyping() {
+    const div = document.createElement('div');
+    div.className = 'msg assistant typing';
+    div.innerHTML = '<span></span><span></span><span></span>';
+    document.getElementById('messages').appendChild(div);
+    scrollBottom();
+    return div;
+}
+
+function addConfirmationCard(card) {
+    awaitingConfirmation = true;
+    confirmationEventId = card.event_id;
+    const div = document.createElement('div');
+    div.className = 'confirm-card';
+    div.id = 'confirm-card-' + card.event_id;
+    div.innerHTML = `
+        <div class="card-title">⚠️ Confirm Action</div>
+        <div class="card-text">${escapeHtml(card.text)}</div>
+        <div class="confirm-actions">
+            <button class="btn-confirm" onclick="doConfirm('${card.event_id}', this)">✓ Yes, Confirm</button>
+            <button class="btn-cancel"  onclick="doCancel('${card.event_id}', this)">Cancel</button>
+        </div>`;
+    document.getElementById('messages').appendChild(div);
+    scrollBottom();
+}
+
+function addDisambiguationCard(options) {
+    awaitingDisambig = true;
+    for (const [slot, choices] of Object.entries(options)) {
+        const div = document.createElement('div');
+        div.className = 'disambig-card';
+        div.innerHTML = `<div class="card-title">Which ${slot.replace(/_id|_/g, ' ').trim()} did you mean?</div>`;
+        choices.forEach(c => {
+            const opt = document.createElement('div');
+            opt.className = 'disambig-option';
+            // Don't show score for __ALL__ flow (forced 75% — uninformative)
+            const scoreHtml = c.confidence < 0.95
+                ? `<span class="disambig-score">${Math.round(c.confidence * 100)}% match</span>` : '';
+            opt.innerHTML = `<span class="disambig-label">${escapeHtml(c.label)}</span>${scoreHtml}`;
+            opt.onclick = () => selectDisambig(slot, c.id, c.label, div);
+            div.appendChild(opt);
+        });
+        document.getElementById('messages').appendChild(div);
+    }
+    scrollBottom();
+}
+
+// Deep link card — clean in-chat button that opens the app screen modal
+function addDeepLinkCard(link, text, micDisabled) {
+    const div = document.createElement('div');
+    div.className = 'msg assistant';
+    const btnClass = micDisabled ? 'deeplink-btn pin-required' : 'deeplink-btn';
+    const btnIcon  = micDisabled ? '🔒 Open — PIN Required' : '📱 Open in App';
+    div.innerHTML = `${text ? `<span>${escapeHtml(text)}</span><br><br>` : ''}
+        <button class="${btnClass}" onclick="openAppScreen('${link}', ${micDisabled || false})">
+            ${btnIcon}
+        </button>`;
+    document.getElementById('messages').appendChild(div);
+    scrollBottom();
+}
+
+function addStructuredResponse(text, data) {
+    const div = document.createElement('div');
+    div.className = 'msg assistant';
+    let html = text ? `<p style="margin-bottom:10px;font-weight:500;">${escapeHtml(text)}</p>` : '';
+
+    if (data.transactions) {
+        html += '<table class="data-table"><tr><th>Date</th><th>Payee</th><th>Amount</th><th>Status</th><th></th></tr>';
+        data.transactions.forEach(t => {
+            const date = new Date(t.date).toLocaleDateString('en-IN', {day:'2-digit', month:'short'});
+            const chargebackBtn = t.eligible_chargeback && !t.chargeback_raised
+                ? `<button class="chargeback-chip" onclick="sendMessage('Raise chargeback for ${t.payee}')">Dispute</button>` : '';
+            html += `<tr>
+                <td>${date}</td>
+                <td>${escapeHtml(t.payee)}</td>
+                <td>₹${t.amount.toLocaleString('en-IN')}</td>
+                <td><span class="status-pill status-${t.status}">${t.status}</span></td>
+                <td>${chargebackBtn}</td>
+            </tr>`;
+        });
+        html += '</table>';
+    } else if (data.mandates) {
+        html += '<table class="data-table"><tr><th>Merchant</th><th>Amount</th><th>Status</th><th>Bank</th><th>Next Debit</th></tr>';
+        data.mandates.forEach(m => {
+            const nextDebit = m.next_debit
+                ? new Date(m.next_debit).toLocaleDateString('en-IN', {day:'2-digit', month:'short'}) : '—';
+            html += `<tr>
+                <td>${escapeHtml(m.merchant)}</td>
+                <td>₹${m.amount.toLocaleString('en-IN')}/${m.frequency.toLowerCase()}</td>
+                <td><span class="status-pill status-${m.status}">${m.status}</span></td>
+                <td>${escapeHtml(m.bank)}</td>
+                <td>${nextDebit}</td>
+            </tr>`;
+        });
+        html += '</table>';
+    } else {
+        html += `<pre style="font-size:12px;white-space:pre-wrap;background:#f8f9fa;padding:10px;border-radius:6px;">${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
+    }
+    div.innerHTML = html;
+    document.getElementById('messages').appendChild(div);
+    scrollBottom();
+}
+
+function doConfirm(eventId, btn) {
+    awaitingConfirmation = false;
+    const card = document.getElementById('confirm-card-' + eventId);
+    if (card) card.querySelectorAll('button').forEach(b => b.disabled = true);
+    sendMessage('', true);
+}
+
+function doCancel(eventId, btn) {
+    awaitingConfirmation = false;
+    const card = document.getElementById('confirm-card-' + eventId);
+    if (card) {
+        card.style.opacity = '0.5';
+        card.querySelectorAll('button').forEach(b => b.disabled = true);
+    }
+    addMsg('assistant', 'Action cancelled. Is there anything else I can help you with?');
+    fetch('/api/chat', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ token, conversation_id: convId, message: '__cancel__', user_confirmed: false })
+    }).catch(() => {});
+}
+
+function selectDisambig(slot, id, label, cardDiv) {
+    awaitingDisambig = false;
+    cardDiv.style.opacity = '0.6';
+    cardDiv.querySelectorAll('.disambig-option').forEach(o => o.style.pointerEvents = 'none');
+    addMsg('user', label);
+    sendMessage('', false, {slot, id, label});
+}
+
+function escapeHtml(str) {
+    return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  APP SCREEN MODAL — Full in-app screen simulation
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function openAppScreen(deepLink, pinRequired) {
+    // Fetch screen data from backend using our authenticated API
+    const screenPath = deepLink.replace('bhim://myupi', '/app') + '?token=' + token;
+    let screenData = null;
+    try {
+        const r = await fetch(screenPath);
+        if (r.ok) screenData = await r.json();
+    } catch(e) {
+        // No network data — render a placeholder screen
+        screenData = { screen: 'unknown', deep_link: deepLink };
+    }
+
+    screenData = screenData || { screen: 'unknown' };
+    screenData._pinRequired = pinRequired;
+    currentScreenData = screenData;
+
+    renderScreen(screenData);
+    document.getElementById('app-screen-overlay').classList.add('visible');
+}
+
+function closeAppScreen() {
+    const overlay = document.getElementById('app-screen-overlay');
+    overlay.classList.remove('visible');
+    pinBuffer = '';
+    currentScreenData = null;
+}
+
+function handleOverlayClick(e) {
+    if (e.target === document.getElementById('app-screen-overlay')) closeAppScreen();
+}
+
+function renderScreen(data) {
+    const body = document.getElementById('screen-body');
+    const appName = document.getElementById('screen-app-name');
+    appName.textContent = 'BHIM MyUPI';
+
+    switch(data.screen) {
+        case 'mandate_pause':   renderMandatePause(data, body);  break;
+        case 'mandate_revoke':  renderMandateRevoke(data, body); break;
+        case 'chargeback':      renderChargeback(data, body);    break;
+        case 'replay_with_pin': renderReplayPin(data, body);     break;
+        case 'safety_switch':   renderSafetySwitch(data, body);  break;
+        case 'delink_number':   renderDelinkNumber(data, body);  break;
+        default:                renderGenericScreen(data, body); break;
+    }
+}
+
+// ── Mandate Pause Screen ──────────────────────────────────────────────────────
+function renderMandatePause(data, body) {
+    const m = data.mandate || {};
+    body.innerHTML = `
+        <div class="screen-badge">⏸ AutoPay Management</div>
+        <div class="screen-title">Pause AutoPay</div>
+        <div class="screen-subtitle">Review and confirm pausing this AutoPay mandate.</div>
+
+        <div class="detail-row">
+            <span class="detail-label">Merchant</span>
+            <span class="detail-value">${escapeHtml(m.merchant || '—')}</span>
+        </div>
+        <div class="detail-row">
+            <span class="detail-label">Amount</span>
+            <span class="detail-value amount">₹${(m.amount || 0).toLocaleString('en-IN')}</span>
+        </div>
+        <div class="detail-row">
+            <span class="detail-label">Current Status</span>
+            <span class="detail-value"><span class="status-pill status-${m.status || 'ACTIVE'}">${m.status || 'ACTIVE'}</span></span>
+        </div>
+
+        <div class="screen-warning">
+            <strong>⚠️ What happens when you pause?</strong>
+            Future automatic debits will stop until you resume. Your subscription may be affected by the merchant.
+        </div>
+
+        <div class="screen-actions">
+            <button class="screen-btn danger" onclick="simulateAction('pause', '${m.id}')">⏸ Pause AutoPay</button>
+            <button class="screen-btn secondary" onclick="closeAppScreen()">Cancel</button>
+        </div>`;
+}
+
+// ── Mandate Revoke Screen ─────────────────────────────────────────────────────
+function renderMandateRevoke(data, body) {
+    const m = data.mandate || {};
+    body.innerHTML = `
+        <div class="screen-badge">🚫 AutoPay Management</div>
+        <div class="screen-title">Revoke AutoPay</div>
+        <div class="screen-subtitle">You are about to permanently revoke this AutoPay mandate.</div>
+
+        <div class="detail-row">
+            <span class="detail-label">Merchant</span>
+            <span class="detail-value">${escapeHtml(m.merchant || '—')}</span>
+        </div>
+
+        <div class="screen-warning">
+            <strong>🚫 This action is irreversible!</strong>
+            Once revoked, this AutoPay cannot be restored. The merchant will no longer be able to debit your account automatically. You may lose your subscription.
+        </div>
+
+        <div class="screen-actions">
+            <button class="screen-btn danger" onclick="simulateAction('revoke', '${m.id}')">🚫 Yes, Revoke AutoPay</button>
+            <button class="screen-btn secondary" onclick="closeAppScreen()">Go Back</button>
+        </div>`;
+}
+
+// ── Chargeback Screen ─────────────────────────────────────────────────────────
+function renderChargeback(data, body) {
+    const t = data.transaction || {};
+    body.innerHTML = `
+        <div class="screen-badge">🔄 Dispute Transaction</div>
+        <div class="screen-title">Raise Chargeback</div>
+        <div class="screen-subtitle">File a dispute for this transaction with your bank.</div>
+
+        <div class="detail-row">
+            <span class="detail-label">Payee</span>
+            <span class="detail-value">${escapeHtml(t.payee || '—')}</span>
+        </div>
+        <div class="detail-row">
+            <span class="detail-label">Amount</span>
+            <span class="detail-value amount">₹${(t.amount || 0).toLocaleString('en-IN')}</span>
+        </div>
+        <div class="detail-row">
+            <span class="detail-label">Transaction Ref</span>
+            <span class="detail-value" style="font-size:12px;color:var(--muted);">${escapeHtml(t.ref || '—')}</span>
+        </div>
+
+        <div class="screen-warning">
+            <strong>📋 Before you proceed</strong>
+            Chargebacks take 7–14 business days. Your bank will investigate and contact you. Misuse of dispute may affect your UPI access.
+        </div>
+
+        <div style="margin:16px 0;">
+            <label style="font-size:13px;color:var(--muted);font-weight:500;display:block;margin-bottom:8px;">Reason for dispute</label>
+            <select style="width:100%;border:1px solid var(--border);border-radius:10px;padding:10px 14px;font-size:14px;outline:none;font-family:'Inter',sans-serif;background:#f8fafc;">
+                <option>Service/product not received</option>
+                <option>Amount charged was incorrect</option>
+                <option>Duplicate charge</option>
+                <option>Transaction not authorised by me</option>
+                <option>Merchant refused refund</option>
+            </select>
+        </div>
+
+        <div class="screen-actions">
+            <button class="screen-btn primary" onclick="simulateAction('chargeback', '${t.id}')">📋 Submit Dispute</button>
+            <button class="screen-btn secondary" onclick="closeAppScreen()">Cancel</button>
+        </div>`;
+}
+
+// ── Transaction Replay — PIN required ─────────────────────────────────────────
+function renderReplayPin(data, body) {
+    const t = data.transaction || {};
+    body.innerHTML = `
+        <div class="screen-badge">🔒 UPI PIN Required</div>
+        <div class="screen-title">Confirm Payment</div>
+        <div class="screen-subtitle">Re-send payment to <strong>${escapeHtml(t.payee || '—')}</strong></div>
+
+        <div class="detail-row">
+            <span class="detail-label">Amount</span>
+            <span class="detail-value amount">₹${(t.amount || 0).toLocaleString('en-IN')}</span>
+        </div>
+        <div class="detail-row">
+            <span class="detail-label">To</span>
+            <span class="detail-value">${escapeHtml(t.payee || '—')}</span>
+        </div>
+
+        <div class="pin-section" id="pin-section">
+            <div class="pin-label">🔐 Enter your UPI PIN to authorise</div>
+            <div class="pin-dots" id="pin-dots">
+                <div class="pin-dot" id="dot-0"></div>
+                <div class="pin-dot" id="dot-1"></div>
+                <div class="pin-dot" id="dot-2"></div>
+                <div class="pin-dot" id="dot-3"></div>
+                <div class="pin-dot" id="dot-4"></div>
+                <div class="pin-dot" id="dot-5"></div>
+            </div>
+            <div class="pin-pad">
+                ${[1,2,3,4,5,6,7,8,9].map(n => `<div class="pin-key" onclick="pinPress('${n}')">${n}</div>`).join('')}
+                <div class="pin-key backspace" onclick="pinBackspace()">⌫</div>
+                <div class="pin-key" onclick="pinPress('0')">0</div>
+                <div class="pin-key submit" onclick="pinSubmit()">Pay</div>
+            </div>
+        </div>`;
+    pinBuffer = '';
+    updatePinDots();
+}
+
+// ── Safety Switch Screen ──────────────────────────────────────────────────────
+function renderSafetySwitch(data, body) {
+    const isActive = data.is_active || false;
+    body.innerHTML = `
+        <div class="screen-badge">🛡️ Security Settings</div>
+        <div class="screen-title">Safety Switch</div>
+        <div class="screen-subtitle">Temporarily block all outgoing UPI transactions from your account.</div>
+
+        <div class="screen-warning">
+            <strong>🛡️ How Safety Switch works</strong>
+            When ON, all UPI payments are blocked instantly. Use this if you lose your phone or suspect fraud. You can turn it back on anytime from this screen.
+        </div>
+
+        <div class="toggle-row">
+            <span class="toggle-label">${isActive ? '🔴 Payments Blocked' : '🟢 Payments Active'}</span>
+            <label class="toggle-switch">
+                <input type="checkbox" id="safety-toggle" ${isActive ? 'checked' : ''} onchange="toggleSafety(this)">
+                <span class="toggle-slider"></span>
+            </label>
+        </div>
+
+        <p id="safety-status-text" style="font-size:13px;color:var(--muted);text-align:center;margin-top:8px;">
+            ${isActive
+                ? '⚠️ All outgoing UPI payments are currently <strong>blocked</strong>.'
+                : '✅ Your UPI payments are currently <strong>active</strong>.'}
+        </p>
+
+        <div class="screen-actions" style="margin-top:24px;">
+            <button class="screen-btn secondary" onclick="closeAppScreen()">Done</button>
+        </div>`;
+}
+
+// ── Delink Number Screen ──────────────────────────────────────────────────────
+function renderDelinkNumber(data, body) {
+    body.innerHTML = `
+        <div class="screen-badge">📵 UPI Settings</div>
+        <div class="screen-title">Delink Mobile Number</div>
+        <div class="screen-subtitle">Remove this mobile number from your UPI account.</div>
+
+        <div class="detail-row">
+            <span class="detail-label">Mobile Number</span>
+            <span class="detail-value">${escapeHtml(data.number || '—')}</span>
+        </div>
+        <div class="detail-row">
+            <span class="detail-label">Linked VPA</span>
+            <span class="detail-value" style="color:var(--primary);">${escapeHtml(data.vpa || '—')}</span>
+        </div>
+
+        <div class="screen-warning">
+            <strong>⚠️ Before you proceed</strong>
+            Delinking this number will also deactivate the associated VPA. Any pending transactions linked to this VPA may fail. This cannot be undone without re-registration.
+        </div>
+
+        <div class="screen-actions">
+            <button class="screen-btn danger" onclick="simulateAction('delink', null)">🗑️ Delink Number</button>
+            <button class="screen-btn secondary" onclick="closeAppScreen()">Cancel</button>
+        </div>`;
+}
+
+// ── Generic / Unknown screen ──────────────────────────────────────────────────
+function renderGenericScreen(data, body) {
+    body.innerHTML = `
+        <div class="screen-badge">📱 App Action</div>
+        <div class="screen-title">Action Required</div>
+        <div class="screen-subtitle">This action requires you to complete the next step in the app.</div>
+
+        <div class="screen-warning" style="background:#f0fdf4;border-color:#bbf7d0;color:#166534;">
+            <strong>✅ Your request has been processed</strong>
+            The next step is handled securely within the BHIM UPI app. In the final production build, this would open the native BHIM application directly.
+        </div>
+
+        <div class="screen-actions">
+            <button class="screen-btn secondary" onclick="closeAppScreen()">Close</button>
+        </div>`;
+}
+
+// ── PIN pad logic ─────────────────────────────────────────────────────────────
+function pinPress(digit) {
+    if (pinBuffer.length >= 6) return;
+    pinBuffer += digit;
+    updatePinDots();
+}
+
+function pinBackspace() {
+    pinBuffer = pinBuffer.slice(0, -1);
+    updatePinDots();
+}
+
+function updatePinDots() {
+    for (let i = 0; i < 6; i++) {
+        const dot = document.getElementById('dot-' + i);
+        if (dot) dot.classList.toggle('filled', i < pinBuffer.length);
+    }
+}
+
+function pinSubmit() {
+    if (pinBuffer.length < 4) {
+        alert('Please enter at least 4 digits.');
+        return;
+    }
+    // Show success state — PIN verified (prototype, always succeeds)
+    const pinSection = document.getElementById('pin-section');
+    if (pinSection) {
+        pinSection.innerHTML = `
+            <div class="pin-success">
+                <div class="check-icon">✅</div>
+                <h3>Payment Successful!</h3>
+                <p>Your UPI PIN was verified and the payment has been processed.</p>
+            </div>`;
+    }
+    pinBuffer = '';
+    // Auto-close after 2.5s
+    setTimeout(() => {
+        closeAppScreen();
+        addMsg('assistant', '✅ Payment confirmed! The transaction has been re-sent successfully.');
+    }, 2500);
+}
+
+// ── Safety toggle (live demo in modal) ───────────────────────────────────────
+function toggleSafety(checkbox) {
+    const statusText = document.getElementById('safety-status-text');
+    if (checkbox.checked) {
+        statusText.innerHTML = '⚠️ All outgoing UPI payments are currently <strong>blocked</strong>.';
+        checkbox.parentElement.previousElementSibling.textContent = '🔴 Payments Blocked';
+    } else {
+        statusText.innerHTML = '✅ Your UPI payments are currently <strong>active</strong>.';
+        checkbox.parentElement.previousElementSibling.textContent = '🟢 Payments Active';
+    }
+}
+
+// ── Generic action simulation (shows success toast inside screen) ─────────────
+function simulateAction(action, id) {
+    const body = document.getElementById('screen-body');
+    const actionLabels = {
+        pause:       { icon: '⏸', title: 'AutoPay Paused', msg: 'Your AutoPay mandate has been successfully paused. Future debits are stopped.' },
+        revoke:      { icon: '🚫', title: 'AutoPay Revoked', msg: 'The AutoPay mandate has been permanently revoked.' },
+        chargeback:  { icon: '📋', title: 'Dispute Filed', msg: 'Your chargeback request has been submitted. You will receive an update in 7–14 business days.' },
+        delink:      { icon: '✅', title: 'Number Delinked', msg: 'The mobile number and its associated VPA have been delinked from your account.' },
+    };
+    const a = actionLabels[action] || { icon: '✅', title: 'Done', msg: 'Action completed successfully.' };
+    body.innerHTML = `
+        <div class="pin-success">
+            <div class="check-icon">${a.icon}</div>
+            <h3>${a.title}</h3>
+            <p style="margin-bottom:20px;">${a.msg}</p>
+            <button class="screen-btn secondary" onclick="closeAppScreen()" style="max-width:200px;margin:0 auto;">Close</button>
+        </div>`;
+
+    // Also add a success message to the chat
+    setTimeout(() => {
+        addMsg('assistant', `${a.icon} ${a.title}: ${a.msg}`);
+    }, 600);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  VOICE WebSocket
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function toggleMic() {
+    if (isRecording) { stopMic(); return; }
+
+    const wsUrl = `ws://${window.location.host}/api/voice?token=${token}&conversation_id=${convId}`;
+    ws = new WebSocket(wsUrl);
+
+    ws.onopen = async () => {
+        const micBtn = document.getElementById('mic-btn');
+        micBtn.classList.add('recording');
+        micBtn.textContent = '⏹';
+        isRecording = true;
+
+        const ind = addMsg('user', '🎙️ Listening...');
+        ind.id = 'listening-indicator';
+
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({audio: true});
+            mediaRecorder = new MediaRecorder(stream, {mimeType: 'audio/webm'});
+
+            mediaRecorder.ondataavailable = async (e) => {
+                if (e.data.size > 0 && ws && ws.readyState === WebSocket.OPEN) {
+                    const buffer = await e.data.arrayBuffer();
+                    ws.send(buffer);
+                }
+            };
+
+            mediaRecorder.onstop = () => {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({type: 'stop_speaking'}));
+                }
+            };
+
+            mediaRecorder.start(250);
+        } catch (e) {
+            console.error('Mic error:', e);
+            stopMic();
+            const ind = document.getElementById('listening-indicator');
+            if (ind) ind.remove();
+            addMsg('error', '⚠️ Microphone access denied or not available.');
+        }
+    };
+
+    ws.onerror = () => {
+        stopMic();
+        addMsg('error', '⚠️ Voice connection failed. Please try again.');
+    };
+
+    ws.onclose = () => {
+        // WebSocket closed unexpectedly — ensure mic state is cleaned up
+        if (isRecording) {
+            stopMic();
+            const ind = document.getElementById('listening-indicator');
+            if (ind) ind.remove();
+        }
+    };
+
+    ws.onmessage = async (e) => {
+        if (typeof e.data !== 'string') {
+            // Audio bytes received from TTS
+            try {
+                const audioBlob = new Blob([e.data], { type: 'audio/wav' });
+                const audioUrl = URL.createObjectURL(audioBlob);
+                const audio = new Audio(audioUrl);
+                audio.play().catch(err => console.log('Audio autoplay prevented:', err));
+            } catch (err) {
+                console.error('Error playing TTS audio:', err);
+            }
+            return;
+        }
+        const msg = JSON.parse(e.data);
+
+        if (msg.type === 'transcript') {
+            const ind = document.getElementById('listening-indicator');
+            if (ind) ind.remove();
+            addMsg('user', '🎙️ ' + msg.text);
+        } else if (msg.type === 'response_text') {
+            if (msg.response_data && (msg.response_data.transactions || msg.response_data.mandates)) {
+                addStructuredResponse(msg.text, msg.response_data);
+            } else if (!msg.deep_link && !msg.confirmation_card) {
+                addMsg('assistant', msg.text);
+            }
+            if (msg.confirmation_card)  addConfirmationCard(msg.confirmation_card);
+            if (msg.disambiguation_options) addDisambiguationCard(msg.disambiguation_options);
+            if (msg.deep_link)          addDeepLinkCard(msg.deep_link, msg.text, msg.response_data?.mic_disabled);
+        } else if (msg.type === 'error') {
+            addMsg('error', '⚠️ ' + msg.text);
+        }
+    };
+}
+
+function stopMic() {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+        if (mediaRecorder.stream) {
+            mediaRecorder.stream.getTracks().forEach(t => t.stop());
+        }
+    }
+    mediaRecorder = null;
+    isRecording = false;
+
+    const micBtn = document.getElementById('mic-btn');
+    micBtn.classList.remove('recording');
+    micBtn.textContent = '🎤';
+
+    const ind = document.getElementById('listening-indicator');
+    if (ind) ind.innerHTML = '🎙️ <i>Processing audio...</i>';
+
+    if (ws) {
+        ws.close();
+        ws = null;
+    }
+}
+</script>
+</body>
+</html>

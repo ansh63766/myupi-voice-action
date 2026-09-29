@@ -1,0 +1,41 @@
+# Environment & sensitive secrets
+.env
+*.env
+.env.*
+!.env.example
+
+# Python virtual environment
+python312/
+venv/
+env/
+.venv/
+
+# Python cache & bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Databases & local data
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Models & downloaded weights (download via Colab / HF at runtime)
+models/
+*.bin
+*.pt
+*.safetensors
+*.onnx
+
+# Server logs & temporary test outputs
+logs/
+*.log
+test_results.json
+
+# IDE & Editor artifacts
+.vscode/
+.idea/
+.gemini/

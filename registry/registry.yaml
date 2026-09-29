@@ -1,0 +1,261 @@
+# registry.yaml — Action Registry
+# Every action the system can perform is defined here.
+# Orchestrator reads this; it has ZERO action-specific logic.
+# Adding an action = adding an entry below. No code changes.
+
+schema_version: "1.0"
+
+actions:
+
+  # ── Tier 0: Read-only ──────────────────────────────────────────────────────
+
+  - action_id: txn_view
+    intent_labels:
+      - view_transactions
+      - show_transactions
+      - list_transactions
+      - transaction_history
+      - recent_transactions
+      - check_transactions
+    required_slots: []
+    optional_slots:
+      - payee
+      - amount
+      - date_range
+      - status
+      - bank_name
+    disambiguation_source: user_transactions
+    risk_tier: 0
+    execution_mode: API_DIRECT
+    deep_link_template: null
+    confirmation_template_id: null
+    voice_safe: true
+    version: "1.0"
+    enabled: true
+
+  - action_id: mandate_view
+    intent_labels:
+      - view_mandates
+      - show_mandates
+      - list_mandates
+      - autopay_list
+      - check_autopay
+      - my_autopay
+    required_slots: []
+    optional_slots:
+      - merchant_name
+      - bank_name
+      - status
+    disambiguation_source: user_active_mandates
+    risk_tier: 0
+    execution_mode: API_DIRECT
+    deep_link_template: null
+    confirmation_template_id: null
+    voice_safe: true
+    version: "1.0"
+    enabled: true
+
+  - action_id: payee_context
+    intent_labels:
+      - payee_info
+      - who_is_payee
+      - payee_details
+      - contact_details
+    required_slots:
+      - payee
+    optional_slots: []
+    disambiguation_source: user_saved_payees
+    risk_tier: 0
+    execution_mode: API_DIRECT
+    deep_link_template: null
+    confirmation_template_id: null
+    voice_safe: true
+    version: "1.0"
+    enabled: true
+
+  - action_id: faq_support
+    intent_labels:
+      - faq
+      - help
+      - support
+      - how_to
+      - what_is
+      - explain
+      - upi_question
+      - general_query
+    required_slots: []
+    optional_slots:
+      - topic
+    disambiguation_source: null
+    risk_tier: 0
+    execution_mode: API_DIRECT
+    deep_link_template: null
+    confirmation_template_id: null
+    voice_safe: true
+    version: "1.0"
+    enabled: true
+
+  # ── Tier 1: Reversible ────────────────────────────────────────────────────
+
+  - action_id: mandate_pause
+    intent_labels:
+      - pause_mandate
+      - stop_mandate
+      - halt_autopay
+      - pause_autopay
+      - suspend_mandate
+    required_slots:
+      - mandate_id
+    optional_slots:
+      - bank_name
+      - merchant_name
+    disambiguation_source: user_active_mandates
+    risk_tier: 1
+    execution_mode: API_WITH_CONFIRMATION
+    deep_link_template: null
+    confirmation_template_id: confirm_mandate_pause_v2
+    voice_safe: true
+    version: "1.0"
+    enabled: true
+
+  - action_id: mandate_resume
+    intent_labels:
+      - resume_mandate
+      - restart_mandate
+      - reactivate_autopay
+      - resume_autopay
+      - unpause_mandate
+    required_slots:
+      - mandate_id
+    optional_slots:
+      - bank_name
+      - merchant_name
+    disambiguation_source: user_paused_mandates
+    risk_tier: 1
+    execution_mode: API_WITH_CONFIRMATION
+    deep_link_template: null
+    confirmation_template_id: confirm_mandate_resume_v1
+    voice_safe: true
+    version: "1.0"
+    enabled: true
+
+  # ── Tier 2: Consequential ─────────────────────────────────────────────────
+
+  - action_id: mandate_revoke
+    intent_labels:
+      - revoke_mandate
+      - cancel_mandate
+      - delete_mandate
+      - cancel_autopay
+      - stop_autopay_permanently
+    required_slots:
+      - mandate_id
+    optional_slots:
+      - bank_name
+      - merchant_name
+    disambiguation_source: user_active_mandates
+    risk_tier: 2
+    execution_mode: DEEP_LINK
+    deep_link_template: "bhim://myupi/mandates/{mandate_id}/revoke"
+    confirmation_template_id: confirm_mandate_revoke_v1
+    voice_safe: true
+    version: "1.0"
+    enabled: true
+
+  - action_id: safety_switch
+    intent_labels:
+      - toggle_safety
+      - enable_safety_switch
+      - disable_safety_switch
+      - safety_lock
+      - block_upi
+      - unblock_upi
+    required_slots: []
+    optional_slots: []
+    disambiguation_source: null
+    risk_tier: 2
+    execution_mode: DEEP_LINK
+    deep_link_template: "bhim://myupi/settings/safety-switch"
+    confirmation_template_id: confirm_safety_switch_v1
+    voice_safe: false
+    version: "1.0"
+    enabled: true
+
+  - action_id: upi_number_delink
+    intent_labels:
+      - delink_number
+      - remove_mobile
+      - unlink_number
+      - deregister_upi
+    required_slots:
+      - number
+    optional_slots: []
+    disambiguation_source: user_upi_numbers
+    risk_tier: 2
+    execution_mode: DEEP_LINK
+    deep_link_template: "bhim://myupi/settings/delink/{number}"
+    confirmation_template_id: confirm_delink_v1
+    voice_safe: false
+    version: "1.0"
+    enabled: true
+
+  - action_id: chargeback
+    intent_labels:
+      - raise_chargeback
+      - dispute_transaction
+      - file_complaint
+      - chargeback_request
+      - transaction_dispute
+    required_slots:
+      - txn_id
+    optional_slots:
+      - reason
+    disambiguation_source: user_eligible_transactions
+    risk_tier: 2
+    execution_mode: DEEP_LINK
+    deep_link_template: "bhim://myupi/transactions/{txn_id}/chargeback"
+    confirmation_template_id: confirm_chargeback_v1
+    voice_safe: true
+    version: "1.0"
+    enabled: true
+
+  # ── Tier 2M: Moves Money ──────────────────────────────────────────────────
+
+  - action_id: transaction_replay
+    intent_labels:
+      - replay_transaction
+      - repeat_payment
+      - resend_payment
+      - pay_again
+      - redo_transaction
+    required_slots:
+      - txn_id
+    optional_slots: []
+    disambiguation_source: user_transactions
+    risk_tier: "2M"
+    execution_mode: DEEP_LINK_THEN_PIN
+    deep_link_template: "bhim://myupi/transactions/{txn_id}/replay"
+    confirmation_template_id: confirm_replay_v1
+    voice_safe: true   # can be voice-initiated but MUST end at PIN screen with mic off
+    version: "1.0"
+    enabled: true
+
+  # ── Extensibility proof (dummy, no engine changes needed) ─────────────────
+
+  - action_id: upi_lite_topup
+    intent_labels:
+      - topup_upi_lite
+      - add_money_upi_lite
+      - recharge_upi_lite
+    required_slots:
+      - amount
+    optional_slots:
+      - bank_name
+    disambiguation_source: user_bank_accounts
+    risk_tier: "2M"
+    execution_mode: DEEP_LINK_THEN_PIN
+    deep_link_template: "bhim://myupi/upi-lite/topup/{amount}"
+    confirmation_template_id: confirm_upi_lite_topup_v1
+    voice_safe: true
+    version: "1.0"
+    enabled: false   # disabled — proof that adding = 1 entry, 0 engine changes

@@ -1,0 +1,41 @@
+# Python dependencies — pin versions for reproducibility
+# Install with: pip install -r requirements.txt
+# Dev/test deps: pip install -r requirements-dev.txt
+
+# Web framework
+fastapi==0.115.12
+uvicorn[standard]==0.32.1
+python-multipart==0.0.20
+websockets==14.2
+
+# Database
+sqlalchemy[asyncio]==2.0.41
+aiosqlite==0.21.0
+alembic==1.16.1
+
+# Config / validation
+pydantic==2.11.4
+pydantic-settings==2.9.1
+pyyaml==6.0.2
+python-dotenv==1.1.1
+
+# LLM (OpenAI-compatible client — works with Ollama)
+openai==1.84.0
+httpx==0.28.1
+
+# Fuzzy matching + transliteration
+rapidfuzz==3.12.2
+indic-transliteration==2.3.64
+
+# Audio
+sounddevice==0.5.1
+scipy==1.15.3
+
+# Numeric (pinned for reproducibility)
+numpy==1.26.4
+
+# Utilities
+colorlog==6.9.0
+rich==14.0.0
+jsonschema==4.24.0
+aiofiles==24.1.0

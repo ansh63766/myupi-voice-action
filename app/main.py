@@ -1,0 +1,483 @@
+"""
+app/main.py — FastAPI application.
+Chat API, deep-link app screens, conversation management.
+"""
+from __future__ import annotations
+
+import logging
+import os
+import uuid
+from datetime import datetime, timedelta
+from typing import Any, Optional
+
+from dotenv import load_dotenv
+load_dotenv()
+
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from agents.types import AuditChain, PipelineState
+from db.engine import create_all_tables, get_db, get_session_factory
+from db.models import (
+    Conversation, Mandate, Message, SafetySwitch, Session,
+    Transaction, UPINumber, User,
+)
+from db.seed import seed_db
+from orchestrator import Orchestrator
+
+# ── Logging setup ───────────────────────────────────────────────────────────────
+_LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs")
+os.makedirs(_LOG_DIR, exist_ok=True)
+
+# Generate a sorted log filename using timestamp (e.g. run_20260929_123045.log)
+_LOG_FILE = os.path.join(_LOG_DIR, datetime.now().strftime("run_%Y%m%d_%H%M%S.log"))
+
+class ColorFormatter(logging.Formatter):
+    COLORS = {
+        logging.DEBUG: "\033[90m",    # Gray
+        logging.INFO: "\033[92m",     # Green
+        logging.WARNING: "\033[93m",  # Yellow
+        logging.ERROR: "\033[91m",    # Red
+        logging.CRITICAL: "\033[95m"  # Magenta
+    }
+    RESET = "\033[0m"
+
+    def format(self, record):
+        color = self.COLORS.get(record.levelno, self.RESET)
+        # We don't modify the record itself to avoid changing the file output
+        fmt = f"%(asctime)s [{color}%(levelname)s{self.RESET}] \033[36m%(name)s\033[0m: %(message)s"
+        formatter = logging.Formatter(fmt)
+        return formatter.format(record)
+
+# Root logger setup
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+# Remove existing handlers to avoid duplicates on reload
+for handler in root_logger.handlers[:]:
+    root_logger.removeHandler(handler)
+
+import re
+
+class PlainTextFormatter(logging.Formatter):
+    ANSI_REGEX = re.compile(r'\x1b\[[0-9;]*m')
+    def format(self, record):
+        formatted = super().format(record)
+        return self.ANSI_REGEX.sub('', formatted)
+
+file_handler = logging.FileHandler(_LOG_FILE, encoding="utf-8")
+file_handler.setFormatter(PlainTextFormatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+
+stream_handler = logging.StreamHandler()
+stream_handler.setFormatter(ColorFormatter())
+
+root_logger.addHandler(file_handler)
+root_logger.addHandler(stream_handler)
+logger = logging.getLogger(__name__)
+
+app = FastAPI(title="MyUPI Prototype", version="0.1.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Serve static files
+_STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+if os.path.exists(_STATIC_DIR):
+    app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
+
+_orchestrator = Orchestrator()
+
+# Cache HTML at startup — don't read from disk on every request
+_INDEX_HTML: str = ""
+
+
+@app.on_event("startup")
+async def startup():
+    global _INDEX_HTML
+    await create_all_tables()
+    factory = get_session_factory()
+    async with factory() as session:
+        await seed_db(session)
+    # Cache HTML once at startup — no disk I/O on every request
+    html_path = os.path.join(os.path.dirname(__file__), "templates", "index.html")
+    if os.path.exists(html_path):
+        with open(html_path, encoding="utf-8") as f:
+            _INDEX_HTML = f.read()
+    logger.info("MyUPI app started.")
+
+from app.voice_ws import voice_router  # noqa: E402
+app.include_router(voice_router)
+
+
+
+# ── Auth helpers (simplified for prototype) ────────────────────────────────────
+
+async def get_session_and_user(
+    token: str,
+    db: AsyncSession,
+) -> tuple[Session, User]:
+    """Validate session token, return (session, user). Raises 401 if invalid."""
+    stmt = select(Session).where(Session.token == token, Session.is_active == True)
+    result = await db.execute(stmt)
+    sess = result.scalar_one_or_none()
+    if not sess or sess.expires_at < datetime.utcnow():
+        raise HTTPException(status_code=401, detail="Invalid or expired session")
+    stmt2 = select(User).where(User.id == sess.user_id)
+    result2 = await db.execute(stmt2)
+    user = result2.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    return sess, user
+
+
+# ── Auth routes ────────────────────────────────────────────────────────────────
+
+class LoginRequest(BaseModel):
+    username: str
+    pin: str
+
+
+class LoginResponse(BaseModel):
+    token: str
+    user_id: str
+    username: str
+    full_name: str
+
+
+@app.post("/api/auth/login", response_model=LoginResponse)
+async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
+    import hashlib
+    stmt = select(User).where(User.username == req.username)
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    pin_hash = hashlib.sha256(req.pin.encode()).hexdigest()
+    if user.pin_hash != pin_hash:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    token = str(uuid.uuid4())
+    sess = Session(
+        id=str(uuid.uuid4()),
+        user_id=user.id,
+        token=token,
+        expires_at=datetime.utcnow() + timedelta(hours=8),
+        is_active=True,
+    )
+    db.add(sess)
+    await db.commit()
+    return LoginResponse(token=token, user_id=user.id, username=user.username, full_name=user.full_name)
+
+
+# ── Conversation routes ────────────────────────────────────────────────────────
+
+class StartConversationResponse(BaseModel):
+    conversation_id: str
+
+
+@app.post("/api/conversations", response_model=StartConversationResponse)
+async def start_conversation(
+    token: str,
+    db: AsyncSession = Depends(get_db),
+):
+    sess, user = await get_session_and_user(token, db)
+    conv = Conversation(
+        id=str(uuid.uuid4()),
+        user_id=user.id,
+        channel="text",
+    )
+    db.add(conv)
+    await db.commit()
+    return StartConversationResponse(conversation_id=conv.id)
+
+
+class ChatRequest(BaseModel):
+    token: str
+    conversation_id: str
+    message: str
+    user_confirmed: bool = False
+    selected_entity: Optional[dict] = None   # for disambiguation tap
+
+
+class ChatResponse(BaseModel):
+    response_text: Optional[str] = None
+    needs_input: bool = False
+    user_prompt: Optional[str] = None
+    error: Optional[str] = None
+    done: bool = False
+    disambiguation_options: Optional[dict] = None
+    confirmation_card: Optional[dict] = None
+    deep_link: Optional[str] = None
+    response_data: Optional[dict] = None
+    mic_disabled: bool = False
+
+
+# In-memory conversation state (keyed by conversation_id)
+# In production this would be Redis / persistent store
+_conversation_states: dict[str, PipelineState] = {}
+_MAX_STATES = 500  # max in-memory conversations
+
+
+def _prune_states() -> None:
+    """Evict finished states if we're over the cap."""
+    if len(_conversation_states) < _MAX_STATES:
+        return
+    # First remove completed conversations
+    done_keys = [k for k, s in _conversation_states.items() if s.done]
+    for k in done_keys[:100]:
+        del _conversation_states[k]
+    # If still over cap, evict oldest entries (Python dicts preserve insertion order)
+    if len(_conversation_states) >= _MAX_STATES:
+        for k in list(_conversation_states.keys())[:50]:
+            del _conversation_states[k]
+
+
+
+@app.post("/api/chat", response_model=ChatResponse)
+async def chat(req: ChatRequest, db: AsyncSession = Depends(get_db)):
+    sess, user = await get_session_and_user(req.token, db)
+
+    # Verify conversation belongs to this user
+    stmt = select(Conversation).where(
+        Conversation.id == req.conversation_id,
+        Conversation.user_id == user.id,
+    )
+    result = await db.execute(stmt)
+    conv = result.scalar_one_or_none()
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    # Build or restore state
+    state_key = req.conversation_id
+    existing_state = _conversation_states.get(state_key)
+
+    # Restore state for any continuation turn: slot fill reply, disambiguation tap, or confirmation
+    is_continuation = existing_state and (
+        existing_state.needs_user_input
+        or req.user_confirmed
+        or req.selected_entity
+    )
+
+    if is_continuation:
+        state = existing_state
+        if req.user_confirmed:
+            # User tapped "Confirm" — clear confirmation so orchestrator runs execution
+            state.confirmation = None
+            state.needs_user_input = False
+            state.done = False
+        elif req.selected_entity:
+            # User tapped a disambiguation option — orchestrator handles the merge
+            state.needs_user_input = False
+            state.done = False
+        elif req.message.strip():
+            # User typed a reply to a slot prompt
+            if state.slot_fill and state.slot_fill.pending_request:
+                missing_slot = state.slot_fill.pending_request.missing_slot
+                state.intent.extracted_slots = _orchestrator.slot_filler.merge_new_input(
+                    state.intent.extracted_slots, req.message, missing_slot
+                )
+            state.slot_fill = None
+            state.entity_resolution = None
+            state.confirmation = None
+            state.needs_user_input = False
+            state.user_prompt = None
+            state.error = None
+            state.done = False
+    else:
+        # Fresh request — start new pipeline
+        _prune_states()  # evict old states before adding new one
+        state = PipelineState(
+            user_id=user.id,
+            session_id=sess.id,
+            conversation_id=conv.id,
+            channel=conv.channel,
+            raw_input=req.message,
+        )
+        _conversation_states[state_key] = state
+
+    # Save user message
+    msg = Message(
+        id=str(uuid.uuid4()),
+        conversation_id=conv.id,
+        role="user",
+        content=req.message,
+    )
+    db.add(msg)
+    await db.commit()
+
+    # Handle cancel action from UI (user clicked Cancel on confirmation card)
+    if req.message == '__cancel__':
+        _conversation_states.pop(state_key, None)
+        return ChatResponse(response_text=None, done=True)
+
+    # Run pipeline
+    state = await _orchestrator.process(
+        state=state,
+        db=db,
+        user_confirmed=req.user_confirmed,
+        selected_entity=req.selected_entity,
+    )
+    _conversation_states[state_key] = state
+
+    # Build response text
+    resp_text = None
+    if state.execution and state.execution.response_text and state.execution.response_text != "__FAQ__":
+        resp_text = state.execution.response_text
+    elif state.user_prompt and not state.needs_user_input:
+        # Only use user_prompt as response_text when it is a final answer (FAQ, error fallback),
+        # NOT when we are still waiting for user input (slot fill prompts show via user_prompt field)
+        resp_text = state.user_prompt
+
+    # Save assistant message
+    if resp_text or state.error:
+        amsg = Message(
+            id=str(uuid.uuid4()),
+            conversation_id=conv.id,
+            role="assistant",
+            content=resp_text or state.error or "",
+            intent_label=state.intent.intent_label if state.intent else None,
+            action_id=state.action_entry.action_id if state.action_entry else None,
+        )
+        db.add(amsg)
+        await db.commit()
+
+    # Disambiguation options
+    disambig = None
+    if state.entity_resolution and state.entity_resolution.needs_disambiguation:
+        disambig = {
+            slot: [
+                {"id": e.resolved_id, "label": e.resolved_label, "confidence": e.confidence}
+                for e in options
+            ]
+            for slot, options in state.entity_resolution.disambiguation_options.items()
+        }
+
+    # Confirmation card
+    conf_card = None
+    if state.confirmation:
+        conf_card = {
+            "text": state.confirmation.card_text,
+            "action_id": state.confirmation.action_id,
+            "event_id": state.confirmation.event_id,
+        }
+
+    # Deep link
+    deep_link = None
+    mic_disabled = False
+    if state.execution and state.execution.deep_link:
+        deep_link = state.execution.deep_link
+    if state.execution and state.execution.response_data:
+        mic_disabled = state.execution.response_data.get("mic_disabled", False)
+
+    return ChatResponse(
+        response_text=resp_text,
+        needs_input=state.needs_user_input,
+        user_prompt=state.user_prompt if state.needs_user_input else None,
+        error=state.error,
+        done=state.done,
+        disambiguation_options=disambig,
+        confirmation_card=conf_card,
+        deep_link=deep_link,
+        response_data=state.execution.response_data if state.execution else None,
+        mic_disabled=mic_disabled,
+    )
+
+
+# ── Deep-link handler (mock BHIM screens) ─────────────────────────────────────
+
+@app.get("/app/mandates/{mandate_id}/pause")
+async def screen_mandate_pause(mandate_id: str, token: str, db: AsyncSession = Depends(get_db)):
+    sess, user = await get_session_and_user(token, db)
+    # CRITICAL: re-fetch from DB using authenticated user — never trust URL param alone
+    stmt = select(Mandate).where(Mandate.id == mandate_id, Mandate.user_id == user.id)
+    result = await db.execute(stmt)
+    mandate = result.scalar_one_or_none()
+    if not mandate:
+        raise HTTPException(status_code=403, detail="Access denied")
+    return JSONResponse({"screen": "mandate_pause", "mandate": {"id": mandate.id, "merchant": mandate.merchant_name, "amount": float(mandate.amount), "status": mandate.status}})
+
+
+@app.get("/app/mandates/{mandate_id}/revoke")
+async def screen_mandate_revoke(mandate_id: str, token: str, db: AsyncSession = Depends(get_db)):
+    sess, user = await get_session_and_user(token, db)
+    stmt = select(Mandate).where(Mandate.id == mandate_id, Mandate.user_id == user.id)
+    result = await db.execute(stmt)
+    mandate = result.scalar_one_or_none()
+    if not mandate:
+        raise HTTPException(status_code=403, detail="Access denied")
+    return JSONResponse({"screen": "mandate_revoke", "mandate": {"id": mandate.id, "merchant": mandate.merchant_name}})
+
+
+@app.get("/app/transactions/{txn_id}/chargeback")
+async def screen_chargeback(txn_id: str, token: str, db: AsyncSession = Depends(get_db)):
+    sess, user = await get_session_and_user(token, db)
+    stmt = select(Transaction).where(Transaction.id == txn_id, Transaction.user_id == user.id)
+    result = await db.execute(stmt)
+    txn = result.scalar_one_or_none()
+    if not txn:
+        raise HTTPException(status_code=403, detail="Access denied")
+    if not txn.eligible_chargeback:
+        raise HTTPException(status_code=400, detail="Transaction not eligible for chargeback")
+    return JSONResponse({"screen": "chargeback", "transaction": {"id": txn.id, "ref": txn.txn_ref, "payee": txn.payee_name, "amount": float(txn.amount)}})
+
+
+@app.get("/app/transactions/{txn_id}/replay")
+async def screen_replay(txn_id: str, token: str, db: AsyncSession = Depends(get_db)):
+    sess, user = await get_session_and_user(token, db)
+    stmt = select(Transaction).where(Transaction.id == txn_id, Transaction.user_id == user.id)
+    result = await db.execute(stmt)
+    txn = result.scalar_one_or_none()
+    if not txn:
+        raise HTTPException(status_code=403, detail="Access denied")
+    # mic_disabled enforced at app shell level — signal it in the response
+    return JSONResponse({"screen": "replay_with_pin", "mic_disabled": True, "transaction": {"id": txn.id, "payee": txn.payee_name, "amount": float(txn.amount)}})
+
+
+@app.get("/app/settings/safety-switch")
+async def screen_safety_switch(token: str, db: AsyncSession = Depends(get_db)):
+    sess, user = await get_session_and_user(token, db)
+    stmt = select(SafetySwitch).where(SafetySwitch.user_id == user.id)
+    result = await db.execute(stmt)
+    ss = result.scalar_one_or_none()
+    return JSONResponse({"screen": "safety_switch", "is_active": ss.is_active if ss else False})
+
+
+@app.get("/app/settings/delink/{number_id}")
+async def screen_delink(number_id: str, token: str, db: AsyncSession = Depends(get_db)):
+    sess, user = await get_session_and_user(token, db)
+    stmt = select(UPINumber).where(UPINumber.id == number_id, UPINumber.user_id == user.id)
+    result = await db.execute(stmt)
+    upi = result.scalar_one_or_none()
+    if not upi:
+        raise HTTPException(status_code=403, detail="Access denied")
+    return JSONResponse({"screen": "delink_number", "number": upi.number, "vpa": upi.vpa})
+
+
+# ── Health check ───────────────────────────────────────────────────────────────
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
+
+
+# ── Chat UI (served from static files) ────────────────────────────────────────
+
+@app.get("/", response_class=HTMLResponse)
+async def index(request: Request):
+    if _INDEX_HTML:
+        return HTMLResponse(_INDEX_HTML)
+    # Fallback: read from disk (happens only if startup failed to cache)
+    html_path = os.path.join(os.path.dirname(__file__), "templates", "index.html")
+    if os.path.exists(html_path):
+        with open(html_path, encoding="utf-8") as f:
+            return HTMLResponse(f.read())
+    return HTMLResponse("<h1>MyUPI Prototype — UI loading...</h1>")
+

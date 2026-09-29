@@ -1,0 +1,59 @@
+# config.yaml — MyUPI Voice+Action Prototype
+
+llm:
+  provider: openai_compatible          
+  base_url: http://14.195.12.18:9597/v1
+  model: /model
+  api_key: "axelblaze"
+  temperature: 0.1
+  max_tokens: 2048
+  timeout_s: 30
+
+asr:
+  provider: sarvam  # using sarvam_voice.py
+  model_authoritative: saaras:v4
+  model_fast_lane: tiny
+  device: cpu
+  compute_type: float16
+  language: null
+  beam_size: 5
+  word_timestamps: false
+  models_dir: models/whisper
+
+tts:
+  provider: sarvam  # using sarvam_voice.py
+  model: bulbul:v3
+  models_dir: models/tts
+  cache_dir: models/tts/cache
+  stream: true
+  speak_sensitive_values: false  # OFF by default per spec
+
+vad:
+  provider: silero          # silero | webrtcvad
+  threshold: 0.5
+  min_speech_duration_ms: 250
+  max_silence_duration_ms: 700
+
+fuzzy:
+  provider: rapidfuzz       # rapidfuzz
+  resolve_threshold: 85     # ≥85 → silent resolve
+  disambiguate_threshold: 60 # 60–84 → show list
+  max_candidates: 5
+
+db:
+  provider: sqlite          # sqlite | postgresql
+  url: sqlite+aiosqlite:///./data/myupi.db
+
+audio:
+  sample_rate: 16000
+  channels: 1
+  max_utterance_s: 15
+  format: wav
+
+session:
+  max_voice_retries: 3
+  slot_fill_max_attempts: 3
+
+logging:
+  level: INFO
+  format: "%(asctime)s [%(name)s] %(levelname)s: %(message)s"
