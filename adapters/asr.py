@@ -46,8 +46,8 @@ class IndicTranscribeFlexASR:
         self,
         model_name: str = "bodhan-ai/indic-transcribe-flex",
         device: str = "cuda",
-        source_lang: str = "hi",
-        target_lang: str = "hi",
+        source_lang: str = "en",
+        target_lang: str = "en",
     ):
         self.model_name = model_name
         self.device = device
