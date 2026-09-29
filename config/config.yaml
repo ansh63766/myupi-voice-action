@@ -21,8 +21,9 @@ asr:
   models_dir: models/whisper
 
 tts:
-  provider: sarvam  # using sarvam_voice.py
-  model: bulbul:v3
+  provider: edge_tts        # edge_tts | hf | sarvam | coqui
+  model: en-IN-NeerjaNeural # Indian English Neural Voice (or hi-IN-SwaraNeural)
+  voice: en-IN-NeerjaNeural
   models_dir: models/tts
   cache_dir: models/tts/cache
   stream: true

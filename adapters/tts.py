@@ -39,6 +39,107 @@ class TTSError(Exception):
     pass
 
 
+class EdgeTTSAdapter(TTSAdapter):
+    """
+    Microsoft Edge Neural TTS adapter.
+    - Zero local GPU/RAM overhead, ultra-fast streaming.
+    - Native support for Indian English (en-IN-NeerjaNeural, en-IN-PrabhatNeural) and Hindi (hi-IN-SwaraNeural, hi-IN-MadhurNeural).
+    - Compatible with Python 3.9 through 3.13+.
+    """
+
+    def __init__(self, voice: str = "en-IN-NeerjaNeural", speak_sensitive_values: bool = False):
+        self.voice = voice
+        self.speak_sensitive_values = speak_sensitive_values
+
+    def _filter_sensitive(self, text: str) -> str:
+        if self.speak_sensitive_values:
+            return text
+        lower = text.lower()
+        for pattern in SENSITIVE_PATTERNS:
+            if pattern in lower:
+                return "[Sensitive information — please check screen]"
+        return text
+
+    async def synthesise(self, text: str) -> bytes:
+        import edge_tts
+        clean_text = self._filter_sensitive(text)
+        communicate = edge_tts.Communicate(clean_text, self.voice)
+        audio_data = bytearray()
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                audio_data.extend(chunk["data"])
+        return bytes(audio_data)
+
+    async def stream(self, text: str) -> AsyncIterator[bytes]:
+        import edge_tts
+        clean_text = self._filter_sensitive(text)
+        communicate = edge_tts.Communicate(clean_text, self.voice)
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                yield chunk["data"]
+
+    async def health_check(self) -> bool:
+        try:
+            import edge_tts
+            return True
+        except ImportError:
+            return False
+
+
+class HuggingFaceTTSAdapter(TTSAdapter):
+    """
+    Hugging Face MMS / VITS TTS model running locally on PyTorch CUDA.
+    Supports facebook/mms-tts-eng, facebook/mms-tts-hin, etc.
+    """
+
+    def __init__(self, model_id: str = "facebook/mms-tts-eng", device: str = "cuda"):
+        self.model_id = model_id
+        self.device = device
+        self._model = None
+        self._tokenizer = None
+
+    def _load(self):
+        if self._model is None:
+            import torch
+            from transformers import VitsModel, AutoTokenizer
+            logger.info("Loading HuggingFace TTS model: %s on %s", self.model_id, self.device)
+            self._tokenizer = AutoTokenizer.from_pretrained(self.model_id)
+            self._model = VitsModel.from_pretrained(self.model_id).to(self.device)
+        return self._model, self._tokenizer
+
+    async def synthesise(self, text: str) -> bytes:
+        import asyncio
+        import io
+        import torch
+        import scipy.io.wavfile
+
+        model, tokenizer = self._load()
+        inputs = tokenizer(text, return_tensors="pt").to(self.device)
+        
+        loop = asyncio.get_event_loop()
+        def _run_inf():
+            with torch.no_grad():
+                output = model(**inputs).waveform[0].cpu().numpy()
+            buf = io.BytesIO()
+            scipy.io.wavfile.write(buf, rate=model.config.sampling_rate, data=output)
+            return buf.getvalue()
+
+        return await loop.run_in_executor(None, _run_inf)
+
+    async def stream(self, text: str) -> AsyncIterator[bytes]:
+        audio = await self.synthesise(text)
+        CHUNK = 4096
+        for i in range(0, len(audio), CHUNK):
+            yield audio[i:i + CHUNK]
+
+    async def health_check(self) -> bool:
+        try:
+            import transformers
+            return True
+        except ImportError:
+            return False
+
+
 class CoquiTTSAdapter(TTSAdapter):
     """
     Coqui TTS adapter.
@@ -151,18 +252,29 @@ def get_tts_adapter() -> TTSAdapter:
     if _adapter is None:
         from config.settings import get_config
         cfg = get_config().tts
-        if cfg.provider == "coqui":
-            _adapter = CoquiTTSAdapter(
-                model_name=cfg.model,
-                models_dir=cfg.models_dir,
-                cache_dir=cfg.cache_dir,
+        if cfg.provider in ("edge_tts", "edge"):
+            _adapter = EdgeTTSAdapter(
+                voice=getattr(cfg, "voice", "en-IN-NeerjaNeural"),
                 speak_sensitive_values=cfg.speak_sensitive_values,
             )
+        elif cfg.provider in ("hf", "huggingface"):
+            _adapter = HuggingFaceTTSAdapter(model_id=cfg.model)
+        elif cfg.provider == "coqui":
+            try:
+                _adapter = CoquiTTSAdapter(
+                    model_name=cfg.model,
+                    models_dir=cfg.models_dir,
+                    cache_dir=cfg.cache_dir,
+                    speak_sensitive_values=cfg.speak_sensitive_values,
+                )
+            except Exception as e:
+                logger.warning("Coqui TTS failed to load (%s), falling back to EdgeTTS", e)
+                _adapter = EdgeTTSAdapter()
         elif cfg.provider == "sarvam":
             from adapters.sarvam_voice import SarvamVoiceTTS
             _adapter = SarvamVoiceTTS()
         else:
-            raise ValueError(f"Unknown TTS provider: {cfg.provider}")
+            _adapter = EdgeTTSAdapter()
     return _adapter
 
 

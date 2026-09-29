@@ -38,8 +38,9 @@ class ASRConfig(BaseModel):
 
 
 class TTSConfig(BaseModel):
-    provider: str = "coqui"
-    model: str = "tts_models/en/ljspeech/vits"
+    provider: str = "edge_tts"
+    model: str = "en-IN-NeerjaNeural"
+    voice: str = "en-IN-NeerjaNeural"
     models_dir: str = "models/tts"
     cache_dir: str = "models/tts/cache"
     stream: bool = True
