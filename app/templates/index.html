@@ -1061,10 +1061,16 @@ async function toggleMic() {
     ws.onerror = (e) => {
         console.error('WebSocket error:', e);
         stopMic();
+        clearTimeout(window.voiceTimeout);
+        const micBtn = document.getElementById('mic-btn');
+        if (micBtn) micBtn.disabled = false;
         addMsg('error', '⚠️ Voice connection failed. Please check your connection.');
     };
 
     ws.onclose = (e) => {
+        clearTimeout(window.voiceTimeout);
+        const micBtn = document.getElementById('mic-btn');
+        if (micBtn) micBtn.disabled = false;
         if (isRecording) {
             stopMic();
             const ind = document.getElementById('listening-indicator');
@@ -1074,14 +1080,36 @@ async function toggleMic() {
 
     ws.onmessage = async (e) => {
         if (typeof e.data !== 'string') {
+            clearTimeout(window.voiceTimeout);
             // Audio bytes received from TTS
             try {
-                const audioBlob = new Blob([e.data], { type: 'audio/wav' });
+                const bytes = new Uint8Array(e.data);
+                let mimeType = 'audio/mpeg';
+                if (bytes.length > 4 && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46) {
+                    mimeType = 'audio/wav'; // Starts with RIFF
+                }
+                const audioBlob = new Blob([e.data], { type: mimeType });
                 const audioUrl = URL.createObjectURL(audioBlob);
                 const audio = new Audio(audioUrl);
-                audio.play().catch(err => console.log('Audio autoplay prevented:', err));
+                
+                audio.onended = () => {
+                    const micBtn = document.getElementById('mic-btn');
+                    if (micBtn) micBtn.disabled = false;
+                };
+                audio.onerror = () => {
+                    const micBtn = document.getElementById('mic-btn');
+                    if (micBtn) micBtn.disabled = false;
+                };
+                
+                audio.play().catch(err => {
+                    console.log('Audio autoplay prevented:', err);
+                    const micBtn = document.getElementById('mic-btn');
+                    if (micBtn) micBtn.disabled = false;
+                });
             } catch (err) {
                 console.error('Error playing TTS audio:', err);
+                const micBtn = document.getElementById('mic-btn');
+                if (micBtn) micBtn.disabled = false;
             }
             return;
         }
@@ -1092,6 +1120,7 @@ async function toggleMic() {
             if (ind) ind.remove();
             addMsg('user', '🎙️ ' + msg.text);
         } else if (msg.type === 'response_text') {
+            clearTimeout(window.voiceTimeout);
             if (msg.response_data && (msg.response_data.transactions || msg.response_data.mandates)) {
                 addStructuredResponse(msg.text, msg.response_data);
             } else if (!msg.deep_link && !msg.confirmation_card) {
@@ -1100,18 +1129,29 @@ async function toggleMic() {
             if (msg.confirmation_card)  addConfirmationCard(msg.confirmation_card);
             if (msg.disambiguation_options) addDisambiguationCard(msg.disambiguation_options);
             if (msg.deep_link)          addDeepLinkCard(msg.deep_link, msg.text, msg.response_data?.mic_disabled);
+        } else if (msg.type === 'tts_done') {
+            clearTimeout(window.voiceTimeout);
+            // Will re-enable mic after audio ends
         } else if (msg.type === 'error') {
+            clearTimeout(window.voiceTimeout);
             addMsg('error', '⚠️ ' + msg.text);
+            const micBtn = document.getElementById('mic-btn');
+            if (micBtn) micBtn.disabled = false;
         }
     };
 }
 
 function stopMic() {
     if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-        mediaRecorder.stop();
-        if (mediaRecorder.stream) {
-            mediaRecorder.stream.getTracks().forEach(t => t.stop());
+        try {
+            mediaRecorder.stop();
+        } catch (e) {
+            console.error('Error stopping MediaRecorder:', e);
         }
+    }
+    // Stop all microphone tracks to release the hardware mic
+    if (mediaRecorder && mediaRecorder.stream) {
+        mediaRecorder.stream.getTracks().forEach(t => t.stop());
     }
     mediaRecorder = null;
     isRecording = false;
@@ -1119,14 +1159,23 @@ function stopMic() {
     const micBtn = document.getElementById('mic-btn');
     micBtn.classList.remove('recording');
     micBtn.textContent = '🎤';
+    micBtn.disabled = true; // Disable until response is received
 
     const ind = document.getElementById('listening-indicator');
     if (ind) ind.innerHTML = '🎙️ <i>Processing audio...</i>';
 
-    if (ws) {
-        ws.close();
-        ws = null;
-    }
+    // Set a safety timeout to re-enable UI if server doesn't respond
+    clearTimeout(window.voiceTimeout);
+    window.voiceTimeout = setTimeout(() => {
+        const i = document.getElementById('listening-indicator');
+        if (i) i.remove();
+        micBtn.disabled = false;
+        if (ws) {
+            try { ws.close(); } catch(e) {}
+            ws = null;
+        }
+        addMsg('error', '⚠️ Voice request timed out. Please try again.');
+    }, 25000);
 }
 </script>
 </body>

@@ -10,10 +10,10 @@ llm:
   timeout_s: 30
 
 asr:
-  provider: sarvam  # using sarvam_voice.py
-  model_authoritative: saaras:v4
+  provider: indic_transcribe
+  model_authoritative: bodhan-ai/indic-transcribe-flex
   model_fast_lane: tiny
-  device: cpu
+  device: cuda
   compute_type: float16
   language: null
   beam_size: 5
@@ -21,13 +21,13 @@ asr:
   models_dir: models/whisper
 
 tts:
-  provider: edge_tts        # edge_tts | hf | sarvam | coqui
-  model: en-IN-NeerjaNeural # Indian English Neural Voice (or hi-IN-SwaraNeural)
+  provider: indic_parler
+  model: ai4bharat/indic-parler-tts
   voice: en-IN-NeerjaNeural
   models_dir: models/tts
   cache_dir: models/tts/cache
   stream: true
-  speak_sensitive_values: false  # OFF by default per spec
+  speak_sensitive_values: false
 
 vad:
   provider: silero          # silero | webrtcvad

@@ -45,17 +45,24 @@ async def voice_websocket(websocket: WebSocket, token: str, conversation_id: str
         try:
             while True:
                 data = await websocket.receive()
+                if data.get("type") == "websocket.disconnect":
+                    logger.info("Voice websocket received disconnect frame for %s", conversation_id)
+                    break
 
-                if "bytes" in data:
+                if "bytes" in data and data["bytes"]:
                     audio_buffer.extend(data["bytes"])
 
-                elif "text" in data:
-                    msg = json.loads(data["text"])
+                elif "text" in data and data["text"]:
+                    try:
+                        msg = json.loads(data["text"])
+                    except Exception:
+                        continue
 
                     if msg.get("type") != "stop_speaking":
                         continue
 
                     if len(audio_buffer) == 0:
+                        await websocket.send_json({"type": "error", "text": "No audio received. Please try speaking again."})
                         continue
 
                     # ── 1. ASR ──────────────────────────────────────────────────
@@ -67,7 +74,27 @@ async def voice_websocket(websocket: WebSocket, token: str, conversation_id: str
                         audio_buffer.clear()
                         continue
 
+                    if not transcript or not transcript.text or not transcript.text.strip():
+                        await websocket.send_json({"type": "error", "text": "Could not recognize speech. Please speak louder."})
+                        audio_buffer.clear()
+                        continue
+
                     await websocket.send_json({"type": "transcript", "text": transcript.text})
+
+                    # Save user message to database
+                    from db.models import Message
+                    import uuid
+                    try:
+                        user_msg = Message(
+                            id=str(uuid.uuid4()),
+                            conversation_id=conversation_id,
+                            role="user",
+                            content=transcript.text,
+                        )
+                        db.add(user_msg)
+                        await db.commit()
+                    except Exception as db_err:
+                        logger.warning("Failed to save voice user message: %s", db_err)
 
                     # ── 2. Normalizer ────────────────────────────────────────────
                     norm_slots = normalizer.normalize(transcript.text)
@@ -77,7 +104,6 @@ async def voice_websocket(websocket: WebSocket, token: str, conversation_id: str
                     existing_state = _conversation_states.get(state_key)
 
                     if existing_state and existing_state.needs_user_input:
-                        # Continue multi-turn dialogue (slot fill continuation)
                         state = existing_state
                         if state.slot_fill and state.slot_fill.pending_request:
                             missing_slot = state.slot_fill.pending_request.missing_slot
@@ -92,7 +118,6 @@ async def voice_websocket(websocket: WebSocket, token: str, conversation_id: str
                         state.error = None
                         state.done = False
                     else:
-                        # Fresh request
                         state = PipelineState(
                             user_id=user.id,
                             session_id=sess.id,
@@ -109,51 +134,76 @@ async def voice_websocket(websocket: WebSocket, token: str, conversation_id: str
                     resp_text = None
                     if state.execution and state.execution.response_text and state.execution.response_text != "__FAQ__":
                         resp_text = state.execution.response_text
-                    elif state.user_prompt and not state.needs_user_input:
+                    elif state.user_prompt:
                         resp_text = state.user_prompt
                     elif state.error:
                         resp_text = state.error
 
-                    if state.needs_user_input and state.user_prompt:
-                        # Slot fill / disambiguation prompt — send as plain text
-                        await websocket.send_json({"type": "response_text", "text": state.user_prompt})
-                        audio_buffer.clear()
-                        continue
+                    if not resp_text:
+                        resp_text = "I've processed your request."
 
-                    if resp_text:
-                        payload: dict = {"type": "response_text", "text": resp_text}
+                    # Save assistant message to database
+                    try:
+                        asst_msg = Message(
+                            id=str(uuid.uuid4()),
+                            conversation_id=conversation_id,
+                            role="assistant",
+                            content=resp_text,
+                            intent_label=state.intent.intent_label if state.intent else None,
+                            action_id=state.action_entry.action_id if state.action_entry else None,
+                        )
+                        db.add(asst_msg)
+                        await db.commit()
+                    except Exception as db_err:
+                        logger.warning("Failed to save voice assistant message: %s", db_err)
 
-                        if state.confirmation:
-                            payload["confirmation_card"] = {
-                                "text": state.confirmation.spoken_text or state.confirmation.card_text,
-                                "action_id": state.confirmation.action_id,
-                                "event_id": state.confirmation.event_id,
-                            }
+                    payload: dict = {"type": "response_text", "text": resp_text}
 
-                        if state.execution and state.execution.response_data:
-                            payload["response_data"] = state.execution.response_data
+                    if state.confirmation:
+                        payload["confirmation_card"] = {
+                            "text": state.confirmation.spoken_text or state.confirmation.card_text,
+                            "action_id": state.confirmation.action_id,
+                            "event_id": state.confirmation.event_id,
+                        }
+                    
+                    if state.entity_resolution and state.entity_resolution.needs_disambiguation:
+                        payload["disambiguation_options"] = {
+                            slot: [
+                                {"id": e.resolved_id, "label": e.resolved_label, "confidence": e.confidence}
+                                for e in options
+                            ]
+                            for slot, options in state.entity_resolution.disambiguation_options.items()
+                        }
 
-                        if state.execution and state.execution.deep_link:
-                            payload["deep_link"] = state.execution.deep_link
+                    if state.execution and state.execution.response_data:
+                        payload["response_data"] = state.execution.response_data
 
-                        await websocket.send_json(payload)
+                    if state.execution and state.execution.deep_link:
+                        payload["deep_link"] = state.execution.deep_link
 
-                        # ── 6. TTS Voice Out ─────────────────────────────────────────
-                        try:
-                            tts_adapter = _get_tts()
-                            async for chunk in tts_adapter.stream(resp_text):
-                                await websocket.send_bytes(chunk)
-                        except Exception as e:
-                            logger.error("TTS Error: %s", e)
+                    await websocket.send_json(payload)
 
+                    # ── 6. TTS Voice Out ─────────────────────────────────────────
+                    try:
+                        tts_adapter = _get_tts()
+                        audio_bytes = await tts_adapter.synthesise(resp_text)
+                        if audio_bytes:
+                            await websocket.send_bytes(audio_bytes)
+                    except Exception as e:
+                        logger.error("TTS Error: %s", e)
+
+                    await websocket.send_json({"type": "tts_done"})
                     audio_buffer.clear()
 
         except WebSocketDisconnect:
             logger.info("Voice websocket disconnected for conversation %s", conversation_id)
         except Exception as e:
-            logger.error("Voice websocket unexpected error: %s", e)
-            try:
-                await websocket.send_json({"type": "error", "text": "Something went wrong. Please try again."})
-            except Exception:
-                pass
+            if "disconnect" in str(e).lower() or "closed" in str(e).lower():
+                logger.info("Voice websocket disconnected (%s)", e)
+            else:
+                logger.error("Voice websocket unexpected error: %s", e, exc_info=True)
+                try:
+                    await websocket.send_json({"type": "error", "text": "Something went wrong. Please try again."})
+                except Exception:
+                    pass
 

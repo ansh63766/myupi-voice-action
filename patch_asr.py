@@ -1,60 +1,9 @@
-"""
-adapters/asr.py â€” ASR interface (V3 dual-lane ASR).
-Fast lane: streaming partials â†’ captions ONLY (never acted upon).
-Authoritative pass: full utterance, per-word confidence, the only transcript entering business logic.
-"""
-from __future__ import annotations
+import sys
 
-import logging
-from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from pathlib import Path
-from typing import AsyncIterator, Optional
+content = open('adapters/asr.py', 'r').read()
+idx = content.find('    async def stream_captions(')
 
-logger = logging.getLogger(__name__)
-
-
-@dataclass
-class WordResult:
-    word: str
-    start: float
-    end: float
-    probability: float  # per-word confidence 0â€“1
-
-
-@dataclass
-class AuthoritativeTranscript:
-    """The ONLY transcript entering the business pipeline."""
-    text: str
-    words: list[WordResult]
-    language: Optional[str]
-    avg_confidence: float
-
-    @property
-    def low_confidence(self) -> bool:
-        """True if average word confidence below threshold."""
-        return self.avg_confidence < 0.7
-
-
-class ASRAdapter(ABC):
-    """Abstract ASR interface. Swappable via config."""
-
-    @abstractmethod
-    async def transcribe_authoritative(
-        self,
-        audio_bytes: bytes,
-        sample_rate: int = 16000,
-        language: Optional[str] = None,
-        contextual_biasing: Optional[list[str]] = None,
-    ) -> AuthoritativeTranscript:
-        """
-        Authoritative pass: full utterance â†’ text + per-word confidence.
-        This is the ONLY transcript used for business logic.
-        """
-        ...
-
-    @abstractmethod
-    async def stream_captions(
+new_content = """    async def stream_captions(
         self,
         audio_stream,
         sample_rate: int = 16000,
@@ -92,10 +41,10 @@ class ASRAdapter(ABC):
 from typing import Optional
 
 class IndicTranscribeFlexASR(ASRAdapter):
-    """
+    \"\"\"
     Bodhan AI / AI4Bharat Indic-Transcribe-Flex ASR.
     1B Canary FastConformer architecture trained for 27 Indian languages.
-    """
+    \"\"\"
     def __init__(
         self,
         model_name: str = "bodhan-ai/indic-transcribe-flex",
@@ -238,3 +187,8 @@ def get_asr_adapter():
 def reset_asr_adapter() -> None:
     global _adapter
     _adapter = None
+"""
+
+if idx != -1:
+    with open('adapters/asr.py', 'w', encoding='utf-8') as f:
+        f.write(content[:idx] + new_content)
