@@ -148,25 +148,19 @@ class IndicTranscribeFlexASR(ASRAdapter):
         sample_rate: int = 16000,
         language: Optional[str] = None,
         contextual_biasing: Optional[list[str]] = None,
-    ):
+    ) -> AuthoritativeTranscript:
         import asyncio
         import os
         import tempfile
         import subprocess
 
-        self._load_model()
-        
-        if self._failed:
-            global _adapter
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.warning("IndicTranscribe failed to load. Falling back to faster-whisper.")
-            _adapter = FasterWhisperAdapter(auth_model_name="small", device=self.device)
-            return await _adapter.transcribe_authoritative(audio_bytes, sample_rate, language, contextual_biasing)
-
         loop = asyncio.get_event_loop()
 
         def _run_inference():
+            self._load_model()
+            if self._failed:
+                raise RuntimeError("IndicTranscribe failed to load.")
+
             with tempfile.NamedTemporaryFile(suffix=".input", delete=False) as raw_tf:
                 raw_tf.write(audio_bytes)
                 raw_path = raw_tf.name
@@ -195,8 +189,15 @@ class IndicTranscribeFlexASR(ASRAdapter):
                     if os.path.exists(p):
                         try: os.remove(p)
                         except Exception: pass
+        
+        try:
+            transcript_text = await loop.run_in_executor(None, _run_inference)
+        except Exception as e:
+            logger.error("IndicTranscribe error: %s. Falling back to faster-whisper.", e)
+            global _adapter
+            _adapter = FasterWhisperAdapter(auth_model_name="small", device=self.device)
+            return await _adapter.transcribe_authoritative(audio_bytes, sample_rate, language, contextual_biasing)
 
-        transcript_text = await loop.run_in_executor(None, _run_inference)
         from adapters.asr import AuthoritativeTranscript
         return AuthoritativeTranscript(
             text=transcript_text.strip(),

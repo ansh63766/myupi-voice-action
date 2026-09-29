@@ -1175,7 +1175,7 @@ function stopMic() {
             ws = null;
         }
         addMsg('error', '⚠️ Voice request timed out. Please try again.');
-    }, 25000);
+    }, 120000); // 2 minutes to accommodate first-time HuggingFace model downloads
 }
 </script>
 </body>

@@ -282,18 +282,15 @@ class IndicParlerTTSAdapter(TTSAdapter):
     async def synthesise(self, text: str) -> bytes:
         import io
         import soundfile as sf
-        self._load_model()
-        
-        if self._failed:
-            logger.warning("IndicParlerTTS failed. Falling back to EdgeTTS.")
-            global _adapter
-            _adapter = EdgeTTSAdapter()
-            return await _adapter.synthesise(text)
-            
         import asyncio
+        
         loop = asyncio.get_event_loop()
         
         def _generate():
+            self._load_model()
+            if self._failed:
+                raise RuntimeError("IndicParlerTTS failed to load.")
+            
             description = "A female speaker delivers a clear and expressive speech with moderate speed."
             input_ids = self._tokenizer(description, return_tensors="pt").input_ids.to(self.device)
             prompt_input_ids = self._tokenizer(text, return_tensors="pt").input_ids.to(self.device)
@@ -313,6 +310,7 @@ class IndicParlerTTSAdapter(TTSAdapter):
         except Exception as e:
             logger.error("IndicParlerTTS generation error: %s", e)
             logger.warning("Falling back to EdgeTTS.")
+            global _adapter
             _adapter = EdgeTTSAdapter()
             return await _adapter.synthesise(text)
 
