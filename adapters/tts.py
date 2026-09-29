@@ -72,18 +72,15 @@ class IndicParlerTTS:
                 "speech in Indian English at a moderate pace."
             )
 
-            desc_ids = self._desc_tokenizer(
-                description, return_tensors="pt"
-            ).input_ids.to(self.device)
-
-            prompt_ids = self._tokenizer(
-                text, return_tensors="pt"
-            ).input_ids.to(self.device)
+            desc_inputs = self._tokenizer(description, return_tensors="pt").to(self.device)
+            prompt_inputs = self._tokenizer(text, return_tensors="pt").to(self.device)
 
             with torch.no_grad():
                 generation = self._model.generate(
-                    input_ids=desc_ids,
-                    prompt_input_ids=prompt_ids,
+                    input_ids=desc_inputs.input_ids,
+                    attention_mask=desc_inputs.attention_mask,
+                    prompt_input_ids=prompt_inputs.input_ids,
+                    prompt_attention_mask=prompt_inputs.attention_mask,
                 )
 
             audio_arr = generation.cpu().numpy().squeeze()
