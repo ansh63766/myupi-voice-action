@@ -990,11 +990,30 @@ function simulateAction(action, id) {
 async function toggleMic() {
     if (isRecording) { stopMic(); return; }
 
-    const wsUrl = `ws://${window.location.host}/api/voice?token=${token}&conversation_id=${convId}`;
+    if (!token || !convId) {
+        addMsg('error', '⚠️ Please log in first to use voice input.');
+        return;
+    }
+
+    const micBtn = document.getElementById('mic-btn');
+
+    // 1. Request microphone permission immediately on user click
+    let stream;
+    try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+        console.error('Microphone permission error:', e);
+        addMsg('error', '⚠️ Microphone access denied or not available. Please allow mic permissions in your browser.');
+        return;
+    }
+
+    // 2. Determine WebSocket protocol (wss:// for HTTPS/Colab/tunnels, ws:// for local http)
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/api/voice?token=${encodeURIComponent(token)}&conversation_id=${encodeURIComponent(convId)}`;
+    
     ws = new WebSocket(wsUrl);
 
     ws.onopen = async () => {
-        const micBtn = document.getElementById('mic-btn');
         micBtn.classList.add('recording');
         micBtn.textContent = '⏹';
         isRecording = true;
@@ -1003,8 +1022,18 @@ async function toggleMic() {
         ind.id = 'listening-indicator';
 
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({audio: true});
-            mediaRecorder = new MediaRecorder(stream, {mimeType: 'audio/webm'});
+            let options = {};
+            if (typeof MediaRecorder.isTypeSupported === 'function') {
+                if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+                    options = { mimeType: 'audio/webm;codecs=opus' };
+                } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+                    options = { mimeType: 'audio/webm' };
+                } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+                    options = { mimeType: 'audio/mp4' };
+                }
+            }
+
+            mediaRecorder = new MediaRecorder(stream, options);
 
             mediaRecorder.ondataavailable = async (e) => {
                 if (e.data.size > 0 && ws && ws.readyState === WebSocket.OPEN) {
@@ -1015,27 +1044,27 @@ async function toggleMic() {
 
             mediaRecorder.onstop = () => {
                 if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({type: 'stop_speaking'}));
+                    ws.send(JSON.stringify({ type: 'stop_speaking' }));
                 }
             };
 
             mediaRecorder.start(250);
         } catch (e) {
-            console.error('Mic error:', e);
+            console.error('MediaRecorder error:', e);
             stopMic();
             const ind = document.getElementById('listening-indicator');
             if (ind) ind.remove();
-            addMsg('error', '⚠️ Microphone access denied or not available.');
+            addMsg('error', '⚠️ Error capturing audio: ' + e.message);
         }
     };
 
-    ws.onerror = () => {
+    ws.onerror = (e) => {
+        console.error('WebSocket error:', e);
         stopMic();
-        addMsg('error', '⚠️ Voice connection failed. Please try again.');
+        addMsg('error', '⚠️ Voice connection failed. Please check your connection.');
     };
 
-    ws.onclose = () => {
-        // WebSocket closed unexpectedly — ensure mic state is cleaned up
+    ws.onclose = (e) => {
         if (isRecording) {
             stopMic();
             const ind = document.getElementById('listening-indicator');

@@ -146,15 +146,21 @@ class FasterWhisperAdapter(ASRAdapter):
         except ImportError:
             raise ASRError("faster-whisper not installed")
 
-        # Convert bytes to numpy float32 (PCM16 LE)
-        audio_np = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+        # Support container formats (WebM/Opus from browser MediaRecorder, WAV, OGG)
+        if len(audio_bytes) > 4 and (audio_bytes[:4] in (b'\x1a\x45\xdf\xa3', b'RIFF', b'OggS') or b'webm' in audio_bytes[:40].lower()):
+            audio_input = io.BytesIO(audio_bytes)
+        else:
+            try:
+                audio_input = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+            except Exception:
+                audio_input = io.BytesIO(audio_bytes)
 
         # Run in thread pool (faster-whisper is synchronous)
         loop = asyncio.get_event_loop()
         segments, info = await loop.run_in_executor(
             None,
             lambda: model.transcribe(
-                audio_np,
+                audio_input,
                 beam_size=self.beam_size,
                 language=language,
                 word_timestamps=True,
