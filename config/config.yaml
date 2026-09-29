@@ -11,38 +11,29 @@ llm:
 
 asr:
   provider: indic_transcribe
-  model_authoritative: bodhan-ai/indic-transcribe-flex
-  model_fast_lane: tiny
+  model: bodhan-ai/indic-transcribe-flex
   device: cuda
-  compute_type: float16
-  language: null
-  beam_size: 5
-  word_timestamps: false
-  models_dir: models/whisper
 
 tts:
   provider: indic_parler
   model: ai4bharat/indic-parler-tts
-  voice: en-IN-NeerjaNeural
-  models_dir: models/tts
-  cache_dir: models/tts/cache
-  stream: true
+  device: cuda
   speak_sensitive_values: false
 
 vad:
-  provider: silero          # silero | webrtcvad
+  provider: silero
   threshold: 0.5
   min_speech_duration_ms: 250
   max_silence_duration_ms: 700
 
 fuzzy:
-  provider: rapidfuzz       # rapidfuzz
-  resolve_threshold: 85     # ≥85 → silent resolve
-  disambiguate_threshold: 60 # 60–84 → show list
+  provider: rapidfuzz
+  resolve_threshold: 85
+  disambiguate_threshold: 60
   max_candidates: 5
 
 db:
-  provider: sqlite          # sqlite | postgresql
+  provider: sqlite
   url: sqlite+aiosqlite:///./data/myupi.db
 
 audio:
@@ -57,4 +48,4 @@ session:
 
 logging:
   level: INFO
-  format: "%(asctime)s [%(name)s] %(levelname)s: %(message)s"
+  format: "%(asctime)s [%(levelname)s] %(name)s: %(message)s"

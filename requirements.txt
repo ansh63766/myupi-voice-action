@@ -1,6 +1,5 @@
-# Python dependencies — pin versions for reproducibility
-# Install with: pip install -r requirements.txt
-# Dev/test deps: pip install -r requirements-dev.txt
+# Requirements for MyUPI Voice+Action App
+# Install: pip install -r requirements.txt
 
 # Web framework
 fastapi==0.115.12
@@ -19,7 +18,7 @@ pydantic-settings==2.9.1
 pyyaml==6.0.2
 python-dotenv==1.1.1
 
-# LLM (OpenAI-compatible client — works with Ollama)
+# LLM (OpenAI-compatible)
 openai==1.84.0
 httpx==0.28.1
 
@@ -27,12 +26,10 @@ httpx==0.28.1
 rapidfuzz==3.12.2
 indic-transliteration==2.3.64
 
-# Audio
-sounddevice==0.5.1
+# Audio utilities
 scipy==1.15.3
-
-# Numeric (pinned for reproducibility)
 numpy==1.26.4
+soundfile
 
 # Utilities
 colorlog==6.9.0

@@ -1,16 +1,14 @@
 """
 config/settings.py — Central configuration loader.
-All agent code imports from here. Never references model names directly.
 """
 from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Optional
 
 import yaml
 from pydantic import BaseModel, Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT = Path(__file__).parent.parent
 
@@ -18,32 +16,23 @@ ROOT = Path(__file__).parent.parent
 class LLMConfig(BaseModel):
     provider: str = "openai_compatible"
     base_url: str = "http://localhost:8000/v1"
-    model: str = "qwen2.5:3b-instruct"
+    model: str = "/model"
     api_key: str = "sk-mock-key"
-    temperature: float = 0.0
-    max_tokens: int = 512
+    temperature: float = 0.1
+    max_tokens: int = 2048
     timeout_s: int = 30
 
 
 class ASRConfig(BaseModel):
-    provider: str = "faster_whisper"
-    model_authoritative: str = "medium"
-    model_fast_lane: str = "tiny"
+    provider: str = "indic_transcribe"
+    model: str = "bodhan-ai/indic-transcribe-flex"
     device: str = "cuda"
-    compute_type: str = "float16"
-    language: str | None = None
-    beam_size: int = 5
-    word_timestamps: bool = True
-    models_dir: str = "models/whisper"
 
 
 class TTSConfig(BaseModel):
-    provider: str = "edge_tts"
-    model: str = "en-IN-NeerjaNeural"
-    voice: str = "en-IN-NeerjaNeural"
-    models_dir: str = "models/tts"
-    cache_dir: str = "models/tts/cache"
-    stream: bool = True
+    provider: str = "indic_parler"
+    model: str = "ai4bharat/indic-parler-tts"
+    device: str = "cuda"
     speak_sensitive_values: bool = False
 
 
@@ -80,7 +69,7 @@ class SessionConfig(BaseModel):
 
 class LoggingConfig(BaseModel):
     level: str = "INFO"
-    format: str = "%(asctime)s [%(name)s] %(levelname)s: %(message)s"
+    format: str = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 
 
 class AppConfig(BaseModel):
@@ -95,8 +84,7 @@ class AppConfig(BaseModel):
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
 
 
-def load_config(config_path: Path | None = None) -> AppConfig:
-    """Load config from YAML, then apply env-var overrides (MYUPI__ prefix)."""
+def load_config(config_path: Optional[Path] = None) -> AppConfig:
     if config_path is None:
         config_path = ROOT / "config" / "config.yaml"
 
@@ -117,8 +105,7 @@ def load_config(config_path: Path | None = None) -> AppConfig:
     return AppConfig.model_validate(raw)
 
 
-# Singleton
-_config: AppConfig | None = None
+_config: Optional[AppConfig] = None
 
 
 def get_config() -> AppConfig:
@@ -129,6 +116,5 @@ def get_config() -> AppConfig:
 
 
 def reset_config() -> None:
-    """Force reload (tests)."""
     global _config
     _config = None

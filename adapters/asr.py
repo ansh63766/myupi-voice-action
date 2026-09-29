@@ -1,15 +1,16 @@
 """
-adapters/asr.py â€” ASR interface (V3 dual-lane ASR).
-Fast lane: streaming partials â†’ captions ONLY (never acted upon).
-Authoritative pass: full utterance, per-word confidence, the only transcript entering business logic.
+adapters/asr.py — ASR using bodhan-ai/indic-transcribe-flex
 """
 from __future__ import annotations
 
+import asyncio
 import logging
-from abc import ABC, abstractmethod
+import os
+import subprocess
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import AsyncIterator, Optional
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -19,222 +20,123 @@ class WordResult:
     word: str
     start: float
     end: float
-    probability: float  # per-word confidence 0â€“1
+    probability: float
 
 
 @dataclass
 class AuthoritativeTranscript:
-    """The ONLY transcript entering the business pipeline."""
     text: str
-    words: list[WordResult]
+    words: list
     language: Optional[str]
     avg_confidence: float
 
-    @property
-    def low_confidence(self) -> bool:
-        """True if average word confidence below threshold."""
-        return self.avg_confidence < 0.7
+
+class ASRError(Exception):
+    pass
 
 
-class ASRAdapter(ABC):
-    """Abstract ASR interface. Swappable via config."""
-
-    @abstractmethod
-    async def transcribe_authoritative(
-        self,
-        audio_bytes: bytes,
-        sample_rate: int = 16000,
-        language: Optional[str] = None,
-        contextual_biasing: Optional[list[str]] = None,
-    ) -> AuthoritativeTranscript:
-        """
-        Authoritative pass: full utterance â†’ text + per-word confidence.
-        This is the ONLY transcript used for business logic.
-        """
-        ...
-
-    @abstractmethod
-    async def stream_captions(
-        self,
-        audio_stream,
-        sample_rate: int = 16000,
-    ):
-        CHUNK_BYTES = sample_rate * 2 * 2
-        buffer = bytearray()
-        try:
-            model = self._load_fast_model()
-        except ImportError:
-            return
-        async for chunk in audio_stream:
-            buffer.extend(chunk)
-            if len(buffer) >= CHUNK_BYTES:
-                try:
-                    import asyncio
-                    loop = asyncio.get_event_loop()
-                    def _fast_transcribe():
-                        import numpy as np
-                        audio_input = np.frombuffer(bytes(buffer[-CHUNK_BYTES:]), dtype=np.int16).astype(np.float32) / 32768.0
-                        segments_gen, _ = model.transcribe(audio_input, language="en")
-                        return list(segments_gen)
-                    segments = await loop.run_in_executor(None, _fast_transcribe)
-                    for seg in segments:
-                        if seg.text: yield seg.text
-                except Exception:
-                    pass
-
-    async def health_check(self) -> bool:
-        try:
-            import faster_whisper
-            return True
-        except ImportError:
-            return False
-
-from typing import Optional
-
-class IndicTranscribeFlexASR(ASRAdapter):
+class IndicTranscribeFlexASR:
     """
-    Bodhan AI / AI4Bharat Indic-Transcribe-Flex ASR.
-    1B Canary FastConformer architecture trained for 27 Indian languages.
+    ASR using bodhan-ai/indic-transcribe-flex via NeMo.
+    Supports Hindi, English, Hinglish and 27 Indian languages.
     """
+
     def __init__(
         self,
         model_name: str = "bodhan-ai/indic-transcribe-flex",
         device: str = "cuda",
-        hf_token: Optional[str] = None,
     ):
         self.model_name = model_name
         self.device = device
-        import os
-        self.hf_token = hf_token or os.getenv("HF_TOKEN")
         self._model = None
-        self._infer_module = None
-        self._model_dir = None
-        self._failed = False
 
     def _load_model(self):
-        if self._model is not None or self._infer_module is not None or self._failed:
-            return
-        import os
-        from pathlib import Path
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.info("Loading Indic-Transcribe-Flex model: %s", self.model_name)
+        if self._model is not None:
+            return self._model
+        logger.info("Loading ASR model: %s", self.model_name)
         try:
-            from huggingface_hub import snapshot_download
-            self._model_dir = snapshot_download(self.model_name, token=self.hf_token)
-            
-            infer_py = Path(self._model_dir) / "inference.py"
-            if infer_py.exists():
-                import importlib.util
-                import sys
-                spec = importlib.util.spec_from_file_location("indic_infer", str(infer_py))
-                self._infer_module = importlib.util.module_from_spec(spec)
-                sys.modules["indic_infer"] = self._infer_module
-                spec.loader.exec_module(self._infer_module)
-                logger.info("Successfully loaded IndicTranscribe inference module.")
-            else:
-                import nemo.collections.asr as nemo_asr
-                self._model = nemo_asr.models.ASRModel.from_pretrained(
-                    self.model_name,
-                    map_location=self.device,
-                )
+            import nemo.collections.asr as nemo_asr
+            self._model = nemo_asr.models.ASRModel.from_pretrained(self.model_name)
+            if self.device == "cuda":
+                import torch
+                if torch.cuda.is_available():
+                    self._model = self._model.cuda()
+            logger.info("ASR model loaded successfully.")
         except Exception as e:
-            self._failed = True
-            logger.error("Failed to load %s: %s. Will fallback to faster-whisper.", self.model_name, e)
+            logger.error("Failed to load ASR model: %s", e)
+            raise ASRError(f"Failed to load ASR model: {e}")
+        return self._model
 
     async def transcribe_authoritative(
         self,
         audio_bytes: bytes,
         sample_rate: int = 16000,
         language: Optional[str] = None,
-        contextual_biasing: Optional[list[str]] = None,
+        contextual_biasing: Optional[list] = None,
     ) -> AuthoritativeTranscript:
-        import asyncio
-        import os
-        import tempfile
-        import subprocess
-
         loop = asyncio.get_event_loop()
 
-        def _run_inference():
-            self._load_model()
-            if self._failed:
-                raise RuntimeError("IndicTranscribe failed to load.")
+        def _run():
+            model = self._load_model()
 
-            with tempfile.NamedTemporaryFile(suffix=".input", delete=False) as raw_tf:
-                raw_tf.write(audio_bytes)
-                raw_path = raw_tf.name
+            # Write raw input to temp file and convert to 16kHz WAV via ffmpeg
+            with tempfile.NamedTemporaryFile(suffix=".input", delete=False) as tf:
+                tf.write(audio_bytes)
+                raw_path = tf.name
 
             wav_path = raw_path + ".wav"
             try:
-                cmd = ["ffmpeg", "-y", "-i", raw_path, "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", wav_path]
-                subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
-
-                text = ""
-                if self._infer_module and hasattr(self._infer_module, "transcribe"):
-                    res = self._infer_module.transcribe(wav_path, lang=language or "hi")
-                    text = str(res[0]) if isinstance(res, (tuple, list)) else str(res)
-                elif self._model:
-                    res = self._model.transcribe([wav_path])
-                    text = res[0] if res else ""
-                else:
-                    import sys
-                    cmd = [sys.executable, os.path.join(self._model_dir, "inference.py"), wav_path]
-                    if language: cmd.extend(["--lang", language])
-                    proc = subprocess.run(cmd, capture_output=True, text=True, check=True)
-                    text = proc.stdout.strip()
-                return text
+                subprocess.run(
+                    ["ffmpeg", "-y", "-i", raw_path,
+                     "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", wav_path],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True
+                )
+                results = model.transcribe([wav_path])
+                text = results[0] if results else ""
+                return str(text).strip()
             finally:
                 for p in (raw_path, wav_path):
-                    if os.path.exists(p):
-                        try: os.remove(p)
-                        except Exception: pass
-        
-        try:
-            transcript_text = await loop.run_in_executor(None, _run_inference)
-        except Exception as e:
-            logger.error("IndicTranscribe error: %s. Falling back to faster-whisper.", e)
-            global _adapter
-            _adapter = FasterWhisperAdapter(auth_model_name="small", device=self.device)
-            return await _adapter.transcribe_authoritative(audio_bytes, sample_rate, language, contextual_biasing)
+                    try:
+                        os.remove(p)
+                    except Exception:
+                        pass
 
-        from adapters.asr import AuthoritativeTranscript
+        try:
+            text = await loop.run_in_executor(None, _run)
+        except Exception as e:
+            logger.error("ASR transcription error: %s", e)
+            raise ASRError(str(e))
+
+        logger.info("ASR transcript: '%s'", text[:80])
         return AuthoritativeTranscript(
-            text=transcript_text.strip(),
+            text=text,
             words=[],
             language=language or "hi",
             avg_confidence=0.95,
         )
 
-    async def stream_captions(self, audio_stream, sample_rate=16000):
-        yield ""
-
     async def health_check(self) -> bool:
-        return not self._failed
+        try:
+            import nemo
+            return True
+        except ImportError:
+            return False
+
 
 # ── Factory ────────────────────────────────────────────────────────────────────
-_adapter = None
 
-def get_asr_adapter():
+_adapter: Optional[IndicTranscribeFlexASR] = None
+
+
+def get_asr_adapter() -> IndicTranscribeFlexASR:
     global _adapter
     if _adapter is None:
-        from config.settings import get_config
-        cfg = get_config().asr
-        if cfg.provider == "faster_whisper":
-            _adapter = FasterWhisperAdapter(
-                auth_model_name=cfg.model_authoritative,
-                fast_model_name=cfg.model_fast_lane,
-                device=cfg.device,
-                compute_type=cfg.compute_type,
-                models_dir=cfg.models_dir,
-                beam_size=cfg.beam_size,
-            )
-        elif cfg.provider in ("indic_transcribe", "bodhan", "sarvam"):
-            model_name = cfg.model_authoritative if cfg.model_authoritative and cfg.model_authoritative not in ("small", "medium", "saaras:v4") else "bodhan-ai/indic-transcribe-flex"
-            _adapter = IndicTranscribeFlexASR(model_name=model_name, device=cfg.device)
-        else:
-            _adapter = FasterWhisperAdapter(auth_model_name="small")
+        _adapter = IndicTranscribeFlexASR(
+            model_name="bodhan-ai/indic-transcribe-flex",
+            device="cuda",
+        )
     return _adapter
+
 
 def reset_asr_adapter() -> None:
     global _adapter
