@@ -162,8 +162,8 @@ def get_asr_adapter() -> IndicTranscribeFlexASR:
         _adapter = IndicTranscribeFlexASR(
             model_name="bodhan-ai/indic-transcribe-flex",
             device="cuda",
-            source_lang="hi",
-            target_lang="hi",
+            source_lang="en",
+            target_lang="en",
         )
     return _adapter
 
