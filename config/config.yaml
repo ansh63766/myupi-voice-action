@@ -15,12 +15,6 @@ asr:
   device: cuda
 
 
-vad:
-  provider: silero
-  threshold: 0.5
-  min_speech_duration_ms: 250
-  max_silence_duration_ms: 700
-
 fuzzy:
   provider: rapidfuzz
   resolve_threshold: 85

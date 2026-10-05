@@ -29,15 +29,6 @@ class ASRConfig(BaseModel):
     device: str = "cuda"
 
 
-
-
-class VADConfig(BaseModel):
-    provider: str = "silero"
-    threshold: float = 0.5
-    min_speech_duration_ms: int = 250
-    max_silence_duration_ms: int = 700
-
-
 class FuzzyConfig(BaseModel):
     provider: str = "rapidfuzz"
     resolve_threshold: float = 85.0
@@ -70,7 +61,6 @@ class LoggingConfig(BaseModel):
 class AppConfig(BaseModel):
     llm: LLMConfig = Field(default_factory=LLMConfig)
     asr: ASRConfig = Field(default_factory=ASRConfig)
-    vad: VADConfig = Field(default_factory=VADConfig)
     fuzzy: FuzzyConfig = Field(default_factory=FuzzyConfig)
     db: DBConfig = Field(default_factory=DBConfig)
     audio: AudioConfig = Field(default_factory=AudioConfig)
