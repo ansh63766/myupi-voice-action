@@ -14,11 +14,6 @@ asr:
   model: bodhan-ai/indic-transcribe-flex
   device: cuda
 
-tts:
-  provider: indic_parler
-  model: ai4bharat/indic-parler-tts
-  device: cuda
-  speak_sensitive_values: false
 
 vad:
   provider: silero

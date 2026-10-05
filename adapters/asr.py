@@ -60,12 +60,42 @@ class IndicTranscribeFlexASR:
         if self._model is not None:
             return self._model
 
-        logger.info("Loading ASR model: %s", self.model_name)
+        # Check pre-downloaded local directories first (avoids repeated HF network calls)
+        candidate_paths = [
+            os.environ.get("ASR_MODEL_DIR"),
+            "/content/asr_model",
+            os.path.join(os.getcwd(), "models", "indic-transcribe-flex"),
+            self.model_name if os.path.isdir(self.model_name) else None,
+        ]
 
-        from huggingface_hub import snapshot_download
-        hf_token = os.environ.get("HF_TOKEN")
-        self._model_dir = snapshot_download(self.model_name, token=hf_token)
-        logger.info("Model downloaded to: %s", self._model_dir)
+        found_path = None
+        for path in candidate_paths:
+            if path and os.path.isdir(path):
+                nemo_file = os.path.join(path, "nemo", "indic_transcribe_flex.nemo")
+                loader_file = os.path.join(path, "nemo", "load_nemo.py")
+                if os.path.exists(nemo_file) and os.path.exists(loader_file):
+                    found_path = path
+                    break
+
+        if found_path:
+            logger.info("Using local pre-downloaded ASR model at: %s", found_path)
+            self._model_dir = found_path
+        else:
+            logger.info("Local model not found. Downloading ASR model: %s", self.model_name)
+            from huggingface_hub import snapshot_download
+            hf_token = os.environ.get("HF_TOKEN")
+            target_dir = os.environ.get("ASR_MODEL_DIR") or "/content/asr_model"
+            try:
+                self._model_dir = snapshot_download(
+                    repo_id=self.model_name,
+                    local_dir=target_dir,
+                    token=hf_token,
+                )
+            except Exception as dl_err:
+                logger.warning("Download to %s failed (%s), using default HF cache...", target_dir, dl_err)
+                self._model_dir = snapshot_download(repo_id=self.model_name, token=hf_token)
+
+            logger.info("ASR Model files ready at: %s", self._model_dir)
 
         # Use the model's own loader shipped inside the repo
         nemo_loader_path = os.path.join(self._model_dir, "nemo")

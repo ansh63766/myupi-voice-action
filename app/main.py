@@ -111,13 +111,11 @@ async def startup():
     if os.path.exists(html_path):
         with open(html_path, encoding="utf-8") as f:
             _INDEX_HTML = f.read()
-    logger.info("Pre-loading AI models into GPU (this will take ~60 seconds)...")
+    logger.info("Pre-loading ASR model into GPU...")
     import asyncio
     from adapters.asr import get_asr_adapter
-    from adapters.tts import get_tts_adapter
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, get_asr_adapter()._load_model)
-    await loop.run_in_executor(None, get_tts_adapter()._load_model)
     logger.info("MyUPI app started.")
 
 from app.voice_ws import voice_router  # noqa: E402

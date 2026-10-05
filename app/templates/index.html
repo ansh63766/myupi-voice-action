@@ -1080,37 +1080,6 @@ async function toggleMic() {
 
     ws.onmessage = async (e) => {
         if (typeof e.data !== 'string') {
-            clearTimeout(window.voiceTimeout);
-            // Audio bytes received from TTS
-            try {
-                const bytes = new Uint8Array(e.data);
-                let mimeType = 'audio/mpeg';
-                if (bytes.length > 4 && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46) {
-                    mimeType = 'audio/wav'; // Starts with RIFF
-                }
-                const audioBlob = new Blob([e.data], { type: mimeType });
-                const audioUrl = URL.createObjectURL(audioBlob);
-                const audio = new Audio(audioUrl);
-                
-                audio.onended = () => {
-                    const micBtn = document.getElementById('mic-btn');
-                    if (micBtn) micBtn.disabled = false;
-                };
-                audio.onerror = () => {
-                    const micBtn = document.getElementById('mic-btn');
-                    if (micBtn) micBtn.disabled = false;
-                };
-                
-                audio.play().catch(err => {
-                    console.log('Audio autoplay prevented:', err);
-                    const micBtn = document.getElementById('mic-btn');
-                    if (micBtn) micBtn.disabled = false;
-                });
-            } catch (err) {
-                console.error('Error playing TTS audio:', err);
-                const micBtn = document.getElementById('mic-btn');
-                if (micBtn) micBtn.disabled = false;
-            }
             return;
         }
         const msg = JSON.parse(e.data);
@@ -1129,9 +1098,13 @@ async function toggleMic() {
             if (msg.confirmation_card)  addConfirmationCard(msg.confirmation_card);
             if (msg.disambiguation_options) addDisambiguationCard(msg.disambiguation_options);
             if (msg.deep_link)          addDeepLinkCard(msg.deep_link, msg.text, msg.response_data?.mic_disabled);
-        } else if (msg.type === 'tts_done') {
+
+            const micBtn = document.getElementById('mic-btn');
+            if (micBtn && !msg.response_data?.mic_disabled) micBtn.disabled = false;
+        } else if (msg.type === 'done' || msg.type === 'tts_done') {
             clearTimeout(window.voiceTimeout);
-            // Will re-enable mic after audio ends
+            const micBtn = document.getElementById('mic-btn');
+            if (micBtn) micBtn.disabled = false;
         } else if (msg.type === 'error') {
             clearTimeout(window.voiceTimeout);
             addMsg('error', '⚠️ ' + msg.text);

@@ -3,7 +3,6 @@ import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from agents.types import PipelineState
 from adapters.asr import get_asr_adapter
-from adapters.tts import get_tts_adapter
 from voice.normalizer import VoiceNormalizer
 
 logger = logging.getLogger(__name__)
@@ -15,11 +14,6 @@ normalizer = VoiceNormalizer()
 def _get_asr():
     """Lazy-load ASR adapter so it is only instantiated after dotenv is loaded."""
     return get_asr_adapter()
-
-
-def _get_tts():
-    """Lazy-load TTS adapter so it is only instantiated after dotenv is loaded."""
-    return get_tts_adapter()
 
 
 @voice_router.websocket("/api/voice")
@@ -183,16 +177,7 @@ async def voice_websocket(websocket: WebSocket, token: str, conversation_id: str
 
                     await websocket.send_json(payload)
 
-                    # ── 6. TTS Voice Out ─────────────────────────────────────────
-                    try:
-                        tts_adapter = _get_tts()
-                        audio_bytes = await tts_adapter.synthesise(resp_text)
-                        if audio_bytes:
-                            await websocket.send_bytes(audio_bytes)
-                    except Exception as e:
-                        logger.error("TTS Error: %s", e)
-
-                    await websocket.send_json({"type": "tts_done"})
+                    await websocket.send_json({"type": "done"})
                     audio_buffer.clear()
 
         except WebSocketDisconnect:

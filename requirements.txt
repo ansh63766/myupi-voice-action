@@ -29,7 +29,6 @@ indic-transliteration==2.3.64
 # Audio utilities
 scipy==1.15.3
 numpy==1.26.4
-soundfile
 
 # Utilities
 colorlog==6.9.0

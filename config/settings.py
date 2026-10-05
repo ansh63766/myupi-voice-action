@@ -29,11 +29,6 @@ class ASRConfig(BaseModel):
     device: str = "cuda"
 
 
-class TTSConfig(BaseModel):
-    provider: str = "indic_parler"
-    model: str = "ai4bharat/indic-parler-tts"
-    device: str = "cuda"
-    speak_sensitive_values: bool = False
 
 
 class VADConfig(BaseModel):
@@ -75,7 +70,6 @@ class LoggingConfig(BaseModel):
 class AppConfig(BaseModel):
     llm: LLMConfig = Field(default_factory=LLMConfig)
     asr: ASRConfig = Field(default_factory=ASRConfig)
-    tts: TTSConfig = Field(default_factory=TTSConfig)
     vad: VADConfig = Field(default_factory=VADConfig)
     fuzzy: FuzzyConfig = Field(default_factory=FuzzyConfig)
     db: DBConfig = Field(default_factory=DBConfig)
