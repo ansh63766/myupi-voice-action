@@ -161,7 +161,13 @@ async def voice_websocket(websocket: WebSocket, token: str, conversation_id: str
                     if state.entity_resolution and state.entity_resolution.needs_disambiguation:
                         payload["disambiguation_options"] = {
                             slot: [
-                                {"id": e.resolved_id, "label": e.resolved_label, "confidence": e.confidence}
+                                {
+                                    "id": e.resolved_id,
+                                    "label": e.resolved_label,
+                                    "resolved_id": e.resolved_id,
+                                    "resolved_label": e.resolved_label,
+                                    "confidence": e.confidence,
+                                }
                                 for e in options
                             ]
                             for slot, options in state.entity_resolution.disambiguation_options.items()

@@ -95,22 +95,16 @@ if os.path.exists(_STATIC_DIR):
 
 _orchestrator = Orchestrator()
 
-# Cache HTML at startup — don't read from disk on every request
-_INDEX_HTML: str = ""
+# Dev mode: always read HTML from disk (edits take effect on browser refresh)
+_INDEX_HTML_PATH = os.path.join(os.path.dirname(__file__), "templates", "index.html")
 
 
 @app.on_event("startup")
 async def startup():
-    global _INDEX_HTML
     await create_all_tables()
     factory = get_session_factory()
     async with factory() as session:
         await seed_db(session)
-    # Cache HTML once at startup — no disk I/O on every request
-    html_path = os.path.join(os.path.dirname(__file__), "templates", "index.html")
-    if os.path.exists(html_path):
-        with open(html_path, encoding="utf-8") as f:
-            _INDEX_HTML = f.read()
     server_url = os.environ.get("ASR_SERVER_URL")
     if server_url:
         logger.info(f"Using remote ASR server at {server_url}. Skipping local GPU preload.")
@@ -670,12 +664,13 @@ async def health():
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    if _INDEX_HTML:
-        return HTMLResponse(_INDEX_HTML)
-    # Fallback: read from disk (happens only if startup failed to cache)
-    html_path = os.path.join(os.path.dirname(__file__), "templates", "index.html")
-    if os.path.exists(html_path):
-        with open(html_path, encoding="utf-8") as f:
-            return HTMLResponse(f.read())
+    # Always read from disk — edits take effect on Ctrl+Shift+R, no server restart needed
+    if os.path.exists(_INDEX_HTML_PATH):
+        with open(_INDEX_HTML_PATH, encoding="utf-8") as f:
+            html = f.read()
+        return HTMLResponse(html, headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+        })
     return HTMLResponse("<h1>MyUPI Prototype — UI loading...</h1>")
 
