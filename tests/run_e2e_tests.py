@@ -1,28 +1,29 @@
 import sys
 import time
-import requests
+from fastapi.testclient import TestClient
+from app.main import app
 
-BASE_URL = "http://127.0.0.1:8000"
+client = TestClient(app)
 
 def run_tests():
     print("======================================================")
-    print("🚀 Running MyUPI End-to-End Tests")
+    print("🚀 Running MyUPI End-to-End Tests (Via TestClient)")
     print("======================================================\n")
 
     # 1. Login
     print("[*] Logging in as Rahul...")
     try:
-        res = requests.post(f"{BASE_URL}/api/auth/login", json={"username": "rahul", "pin": "1234"})
+        res = client.post("/api/auth/login", json={"username": "rahul", "pin": "1234"})
         res.raise_for_status()
         token = res.json()["token"]
         print("✅ Logged in successfully.\n")
     except Exception as e:
-        print(f"❌ Login failed! Make sure the server is running on {BASE_URL}")
+        print("❌ Login failed!")
         print(e)
         return
 
     # 2. Start Conversation
-    res = requests.post(f"{BASE_URL}/api/conversations?token={token}")
+    res = client.post(f"/api/conversations?token={token}")
     conv_id = res.json()["conversation_id"]
 
     def chat(msg, confirmed=False, entity=None):
@@ -34,7 +35,7 @@ def run_tests():
             "selected_entity": entity
         }
         print(f"\n👤 USER: {msg}" if msg else (f"\n👤 USER: [Tapped Confirm]" if confirmed else f"\n👤 USER: [Selected Option]"))
-        res = requests.post(f"{BASE_URL}/api/chat", json=payload)
+        res = client.post("/api/chat", json=payload)
         data = res.json()
 
         if data.get("response_text"):
