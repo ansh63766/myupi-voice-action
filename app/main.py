@@ -543,6 +543,35 @@ async def execute_action(req: Request, db: AsyncSession = Depends(get_db)):
         await db.execute(update(Mandate).where(Mandate.id == target_id, Mandate.user_id == user.id).values(status="REVOKED"))
     elif action == "chargeback":
         await db.execute(update(Transaction).where(Transaction.id == target_id, Transaction.user_id == user.id).values(chargeback_raised=True))
+    elif action == "replay":
+        stmt = select(Transaction).where(Transaction.id == target_id, Transaction.user_id == user.id)
+        result = await db.execute(stmt)
+        old_txn = result.scalar_one_or_none()
+        if old_txn:
+            import uuid, datetime
+            new_txn = Transaction(
+                id=str(uuid.uuid4()),
+                user_id=user.id,
+                payee_name=old_txn.payee_name,
+                amount=old_txn.amount,
+                status="SUCCESS",
+                txn_ref=f"T{uuid.uuid4().hex[:8].upper()}",
+                created_at=datetime.datetime.utcnow(),
+                eligible_chargeback=True
+            )
+            db.add(new_txn)
+    elif action == "delink":
+        from db.models import UPINumber
+        from sqlalchemy import delete
+        await db.execute(delete(UPINumber).where(UPINumber.id == target_id, UPINumber.user_id == user.id))
+    elif action == "safety-switch":
+        from db.models import SafetySwitch
+        # mock toggling it
+        stmt = select(SafetySwitch).where(SafetySwitch.user_id == user.id)
+        result = await db.execute(stmt)
+        ss = result.scalar_one_or_none()
+        if ss:
+            await db.execute(update(SafetySwitch).where(SafetySwitch.user_id == user.id).values(is_active=not ss.is_active))
     
     await db.commit()
     return JSONResponse({"status": "ok"})

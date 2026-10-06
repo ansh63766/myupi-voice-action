@@ -675,17 +675,7 @@
                 }
                 if (msg.deep_link) {
                     addChatMsg('assistant', msg.text || "Please tap to proceed.");
-                    if (msg.response_data && msg.response_data.requires_pin) {
-                        addActionCard("Proceed with Action", "Requires UPI PIN to authenticate.", "Verify PIN", () => {
-                            requestPin("Authenticate Action", (pin) => {
-                                sendChatMessage('__confirm__');
-                            });
-                        });
-                    } else {
-                        addActionCard("Action Required", "Continue to execute this action.", "Proceed", () => {
-                            sendChatMessage('__confirm__');
-                        });
-                    }
+                    handleDeepLink(msg.deep_link, msg.response_data && msg.response_data.requires_pin);
                 }
                 if (msg.confirmation_card) {
                     addActionCard("Confirm Action", msg.confirmation_card.text, "Confirm", () => {
@@ -735,6 +725,15 @@
                 <div style="font-weight:700; font-size:18px; margin-bottom:20px;">Delink Number</div>
                 <div style="margin-bottom:20px;">Remove ${screenData.number} (${screenData.vpa})?</div>
                 <button style="width:100%; padding:14px; background:#ef4444; color:#fff; border:none; border-radius:16px; font-weight:600;" onclick="executeActionWithPin('Delink Number', 'delink', '1')">Yes, Delink</button>
+            `;
+            modal.style.display = 'flex';
+        } else {
+            const modal = document.getElementById('action-modal');
+            document.getElementById('action-modal-content').innerHTML = `
+                <div style="font-weight:700; font-size:18px; margin-bottom:20px;">App Screen</div>
+                <div style="margin-bottom:20px;">Navigated to: <b>${deepLink}</b></div>
+                <div style="margin-bottom:20px; font-size:14px; color:#64748b;">This represents a native screen inside the BHIM app where you can complete this action manually.</div>
+                <button style="width:100%; padding:14px; background:#e2e8f0; color:#333; border:none; border-radius:16px; font-weight:600;" onclick="document.getElementById('action-modal').style.display='none';">Close</button>
             `;
             modal.style.display = 'flex';
         }
@@ -868,14 +867,42 @@
         if (e.key === 'Enter') sendChatMessage();
     }
 
+    function handleDeepLink(deepLink, requiresPin) {
+        if (requiresPin) {
+            addActionCard("Proceed with Action", "Requires UPI PIN to authenticate.", "Verify PIN", () => {
+                requestPin("Authenticate Action", (pin) => {
+                    const parts = deepLink.split('/');
+                    let action = parts.pop();
+                    let entityId = parts.pop();
+                    if (action && !isNaN(action) && entityId === 'delink') {
+                        entityId = action;
+                        action = 'delink';
+                    }
+                    executeActionWithPin("Proceed", action, entityId, pin);
+                });
+            });
+        } else {
+            addActionCard("Action Required", "Continue to execute this action.", "Proceed", () => {
+                openAppScreen(deepLink, false);
+            });
+        }
+    }
+
     async function sendChatMessage(msgOverride = null) {
         const input = document.getElementById('real-chat-input');
         const text = msgOverride || input.value.trim();
         if(!text) return;
-        input.value = '';
         
-        addChatMsg('user', text);
-        
+        if (msgOverride !== '__confirm__') {
+            input.value = '';
+            addChatMsg('user', text);
+        }
+
+        if (!token || !convId) {
+            addChatMsg('assistant', '⚠️ Please log in first.');
+            return;
+        }
+
         const r = await fetch('/api/chat', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -906,21 +933,8 @@
         }
         
         if (data.deep_link) {
-            // It's a deep link, usually to an action. Show it.
             addChatMsg('assistant', data.response_text || data.user_prompt || "Please tap to proceed.");
-            if (data.response_data && data.response_data.requires_pin) {
-                // If the backend indicates PIN is required, we show the PIN pad automatically or via a button.
-                addActionCard("Proceed with Action", "Requires UPI PIN to authenticate.", "Verify PIN", () => {
-                    requestPin("Authenticate Action", (pin) => {
-                        // After PIN success, tell backend we confirmed
-                        sendChatMessage('__confirm__');
-                    });
-                });
-            } else {
-                addActionCard("Action Required", "Continue to execute this action.", "Proceed", () => {
-                    sendChatMessage('__confirm__');
-                });
-            }
+            handleDeepLink(data.deep_link, data.response_data && data.response_data.requires_pin);
         }
         
         if (data.confirmation_card) {
