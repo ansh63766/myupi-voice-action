@@ -115,6 +115,28 @@ class IndicTranscribeFlexASR:
         contextual_biasing: Optional[list] = None,
     ) -> AuthoritativeTranscript:
 
+        import os
+        import httpx
+        
+        server_url = os.environ.get("ASR_SERVER_URL")
+        if server_url:
+            try:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    files = {'audio_file': ('audio.webm', audio_bytes, 'audio/webm')}
+                    data = {'language': language or self.source_lang}
+                    resp = await client.post(f"{server_url}/transcribe", data=data, files=files)
+                    resp.raise_for_status()
+                    text = resp.json().get("text", "")
+                    logger.info("ASR server transcript: '%s'", text[:80])
+                    return AuthoritativeTranscript(
+                        text=text,
+                        language=language or self.source_lang,
+                        avg_confidence=0.95,
+                    )
+            except Exception as e:
+                logger.error("ASR server error: %s", e)
+                raise ASRError(str(e))
+                
         loop = asyncio.get_event_loop()
 
         def _run():

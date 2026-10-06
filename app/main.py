@@ -111,11 +111,16 @@ async def startup():
     if os.path.exists(html_path):
         with open(html_path, encoding="utf-8") as f:
             _INDEX_HTML = f.read()
-    logger.info("Pre-loading ASR model into GPU...")
-    import asyncio
-    from adapters.asr import get_asr_adapter
-    loop = asyncio.get_event_loop()
-    await loop.run_in_executor(None, get_asr_adapter()._load_model)
+    server_url = os.environ.get("ASR_SERVER_URL")
+    if server_url:
+        logger.info(f"Using remote ASR server at {server_url}. Skipping local GPU preload.")
+    else:
+        logger.info("Pre-loading ASR model into GPU...")
+        import asyncio
+        from adapters.asr import get_asr_adapter
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, get_asr_adapter()._load_model)
+        
     logger.info("MyUPI app started.")
 
 from app.voice_ws import voice_router  # noqa: E402
