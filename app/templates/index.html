@@ -558,6 +558,12 @@
 </div>
 
 <script>
+    window.addEventListener('error', (e) => {
+        console.error('[JS ERROR]', e.message, e.filename, e.lineno, e.colno);
+    });
+    window.addEventListener('unhandledrejection', (e) => {
+        console.error('[JS PROMISE REJECTION]', e.reason);
+    });
     let token = null;
     let convId = null;
     let currentActionContext = null; // Store context for PIN execution
