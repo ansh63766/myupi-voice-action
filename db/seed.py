@@ -154,6 +154,26 @@ TRANSACTIONS = [
     {"user_id": "user-001", "payee_name": "I FITNESS ZONE", "payee_vpa": "fitness@upi", "amount": 6000.0, "txn_type": "DEBIT", "status": "SUCCESS", "bank_name": "Axis", "created_at": _days_ago(3), "eligible_chargeback": True},
 ]
 
+# Auto-generate 120 more transactions for user-001 to simulate heavy usage
+import random
+_MERCHANTS = ["Swiggy", "Zomato", "Amazon Pay", "BookMyShow", "Paytm Wallet", "Uber", "Ola", "Starbucks", "Blinkit", "Zepto"]
+for _i in range(120):
+    _m = random.choice(_MERCHANTS)
+    _amt = float(random.randint(50, 2000))
+    _days = random.randint(3, 180)
+    TRANSACTIONS.append({
+        "user_id": "user-001",
+        "payee_name": _m,
+        "payee_vpa": f"{_m.lower().replace(' ', '')}@upi",
+        "amount": _amt,
+        "txn_type": "DEBIT",
+        "status": random.choice(["SUCCESS", "SUCCESS", "SUCCESS", "FAILED"]),
+        "bank_name": "HDFC Bank",
+        "note": f"Payment {_i}",
+        "created_at": _days_ago(_days),
+        "eligible_chargeback": random.choice([True, False])
+    })
+
 SAFETY_SWITCHES = [
     {"user_id": "user-001", "is_active": False},
     {"user_id": "user-002", "is_active": False},

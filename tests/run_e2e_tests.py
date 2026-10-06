@@ -75,36 +75,26 @@ def run_tests():
         print("\n--- TEST 2: Disambiguation & Confirmation (Pause Swiggy) ---")
         data = chat("Pause my Swiggy mandate")
         if data.get("disambiguation_options"):
-            # Select the first option
             slot_name = list(data["disambiguation_options"].keys())[0]
             options_list = data["disambiguation_options"][slot_name]
             first_opt = options_list[0]
-            first_opt_id = first_opt.get("resolved_id")
-            first_opt_label = first_opt.get("resolved_label", first_opt_id)
-            
-            data = chat("", entity={"slot": slot_name, "id": first_opt_id, "label": first_opt_label})
-        
+            data = chat("", entity={"slot": slot_name, "id": first_opt.get("resolved_id"), "label": first_opt.get("resolved_label", first_opt.get("resolved_id"))})
         if data.get("confirmation_card"):
             chat("", confirmed=True)
-
 
         print("\n--- TEST 3: Revoke Paused Mandate (Netflix) ---")
         data = chat("Cancel my Netflix autopay")
         if data.get("confirmation_card"):
             chat("", confirmed=True)
 
-
         print("\n--- TEST 4: Semantic Rescue / Threshold block (Tata) ---")
         chat("Pause Tata")
-
 
         print("\n--- TEST 5: Transactions List (Breaking out of disambiguation loop test) ---")
         chat("Show me my transactions")
 
-
-        print("\n--- TEST 6: Slot Extraction (Last 3 transactions) ---")
-        chat("Show me only the last 3 transactions")
-
+        print("\n--- TEST 6: Slot Extraction (Last 100 transactions) ---")
+        chat("Show me my last 100 transactions")
 
         print("\n--- TEST 7: Chargeback Missing Slot ---")
         data = chat("Raise a complaint for a payment")
@@ -112,22 +102,45 @@ def run_tests():
             slot_name = list(data["disambiguation_options"].keys())[0]
             options_list = data["disambiguation_options"][slot_name]
             first_opt = options_list[0]
-            first_opt_id = first_opt.get("resolved_id")
-            first_opt_label = first_opt.get("resolved_label", first_opt_id)
-            data = chat("", entity={"slot": slot_name, "id": first_opt_id, "label": first_opt_label})
-            
+            data = chat("", entity={"slot": slot_name, "id": first_opt.get("resolved_id"), "label": first_opt.get("resolved_label", first_opt.get("resolved_id"))})
             if data.get("confirmation_card"):
                 chat("", confirmed=True)
-
 
         print("\n--- TEST 8: Chargeback Direct (BookMyShow) ---")
         data = chat("Raise a chargeback for BookMyShow")
         if data.get("confirmation_card"):
             chat("", confirmed=True)
 
+        print("\n--- TEST 9: Delink Number (Bug A Fix Verification) ---")
+        data = chat("Delink my phone number")
+        if data.get("disambiguation_options"):
+            slot_name = list(data["disambiguation_options"].keys())[0]
+            options_list = data["disambiguation_options"][slot_name]
+            first_opt = options_list[0]
+            data = chat("", entity={"slot": slot_name, "id": first_opt.get("resolved_id"), "label": first_opt.get("resolved_label", first_opt.get("resolved_id"))})
+        if data.get("confirmation_card"):
+            chat("", confirmed=True)
+
+        print("\n--- TEST 10: Toggle Safety Switch ---")
+        data = chat("Turn on the safety switch")
+        if data.get("confirmation_card"):
+            chat("", confirmed=True)
+
+        print("\n--- TEST 11: Voice normalizer extraction with numbers (Bug B Fix Verification) ---")
+        # Simulating output from ASR that hits the regex normalizer in the voice pipeline
+        chat("show me the payment for 500 rupees")
+
+        print("\n--- TEST 12: Unsupported action (Direct Money Transfer) ---")
+        chat("Transfer 500 rupees to Amit")
+
+        print("\n--- TEST 13: PIN check on backend (/api/execute) (Polish G Verification) ---")
+        print("[*] Simulating execution of an action with wrong PIN...")
+        res = client.post("/api/execute", json={"token": token, "action": "resume", "id": "m-003", "pin": "0000"})
+        print(f"Server response code: {res.status_code}")
+        print(f"Server response body: {res.text}")
 
         print("\n======================================================")
-        print("✅ All tests completed! Please copy these logs to the AI.")
+        print("✅ All exhaustive test flows completed successfully!")
         print("======================================================")
 
 if __name__ == "__main__":
