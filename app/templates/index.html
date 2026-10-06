@@ -604,9 +604,12 @@
         let html = text ? `<p style="margin-bottom:10px;font-weight:500;">${escapeHtml(text)}</p>` : '';
         html += '<div style="display:flex; flex-direction:column; gap:8px; margin-top:10px;">';
         
-        Object.values(optionsMap).forEach(list => {
-            list.forEach(opt => {
-                html += `<button style="background:var(--primary); color:#fff; border:none; padding:10px 14px; border-radius:12px; font-weight:600; text-align:left; font-size:14px; cursor:pointer;" onclick="document.getElementById('real-chat-input').value='${escapeHtml(opt.resolved_label)}'; sendChatMessage();">${escapeHtml(opt.resolved_label)}</button>`;
+        Object.keys(optionsMap).forEach(slotName => {
+            optionsMap[slotName].forEach(opt => {
+                // Attach slot_name to the option object so the backend knows which slot it resolves
+                opt.slot_name = slotName;
+                const optJson = escapeHtml(JSON.stringify(opt));
+                html += `<button style="background:var(--primary); color:#fff; border:none; padding:10px 14px; border-radius:12px; font-weight:600; text-align:left; font-size:14px; cursor:pointer;" onclick="sendChatMessage(null, JSON.parse(this.dataset.opt))" data-opt="${optJson}">${escapeHtml(opt.resolved_label)}</button>`;
             });
         });
         html += '</div>';
@@ -888,14 +891,16 @@
         }
     }
 
-    async function sendChatMessage(msgOverride = null) {
+    async function sendChatMessage(msgOverride = null, selectedEntity = null) {
         const input = document.getElementById('real-chat-input');
         const text = msgOverride || input.value.trim();
-        if(!text) return;
+        if(!text && !selectedEntity) return;
         
-        if (msgOverride !== '__confirm__') {
+        if (msgOverride !== '__confirm__' && !selectedEntity) {
             input.value = '';
             addChatMsg('user', text);
+        } else if (selectedEntity) {
+            addChatMsg('user', selectedEntity.resolved_label);
         }
 
         if (!token || !convId) {
@@ -903,10 +908,13 @@
             return;
         }
 
+        const payload = { token, conversation_id: convId, message: text, user_confirmed: (msgOverride==='__confirm__') };
+        if (selectedEntity) payload.selected_entity = selectedEntity;
+
         const r = await fetch('/api/chat', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ token, conversation_id: convId, message: text, user_confirmed: (msgOverride==='__confirm__') })
+            body: JSON.stringify(payload)
         });
         let data;
         try {

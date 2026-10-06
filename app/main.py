@@ -358,10 +358,7 @@ async def chat(req: ChatRequest, db: AsyncSession = Depends(get_db)):
     disambig = None
     if state.entity_resolution and state.entity_resolution.needs_disambiguation:
         disambig = {
-            slot: [
-                {"id": e.resolved_id, "label": e.resolved_label, "confidence": e.confidence}
-                for e in options
-            ]
+            slot: [e.model_dump() for e in options]
             for slot, options in state.entity_resolution.disambiguation_options.items()
         }
 
