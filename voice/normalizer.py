@@ -92,7 +92,7 @@ class VoiceNormalizer:
             if m:
                 number = m.group(1)
                 result.phone_number = f"+91{number}"
-                result.extracted["phone_number"] = result.phone_number
+                result.extracted["number"] = result.phone_number
                 residual = residual[:m.start()] + " " + residual[m.end():]
                 break
 

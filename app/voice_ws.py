@@ -99,14 +99,11 @@ async def voice_websocket(websocket: WebSocket, token: str, conversation_id: str
 
                     if existing_state and existing_state.needs_user_input:
                         state = existing_state
-                        if state.slot_fill and state.slot_fill.pending_request:
-                            missing_slot = state.slot_fill.pending_request.missing_slot
-                            state.intent.extracted_slots = _orchestrator.slot_filler.merge_new_input(
-                                state.intent.extracted_slots, processed_text, missing_slot
-                            )
-                        state.slot_fill = None
-                        state.entity_resolution = None
-                        state.confirmation = None
+                        state.raw_input = processed_text
+                        state.pre_extracted_slots = norm_slots.extracted
+                        
+                        # Let orchestrator handle merging (slot fill or disambiguation)
+                        # We just need to reset the flags so the pipeline reruns
                         state.needs_user_input = False
                         state.user_prompt = None
                         state.error = None
@@ -118,6 +115,7 @@ async def voice_websocket(websocket: WebSocket, token: str, conversation_id: str
                             conversation_id=conversation_id,
                             channel="voice",
                             raw_input=processed_text,
+                            pre_extracted_slots=norm_slots.extracted,
                         )
 
                     # ── 4. Run pipeline ──────────────────────────────────────────

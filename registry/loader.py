@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, PrivateAttr, field_validator, model_validator
 
 ROOT = Path(__file__).parent.parent
 
@@ -56,8 +56,8 @@ class Registry(BaseModel):
     actions: list[ActionEntry]
 
     # Cached lookup maps (built after validation)
-    _intent_map: dict[str, ActionEntry] = {}
-    _action_map: dict[str, ActionEntry] = {}
+    _intent_map: dict[str, ActionEntry] = PrivateAttr(default_factory=dict)
+    _action_map: dict[str, ActionEntry] = PrivateAttr(default_factory=dict)
 
     def model_post_init(self, __context: Any) -> None:
         self._intent_map = {}

@@ -199,6 +199,7 @@ class PipelineState(BaseModel):
     conversation_id: str
     channel: str = "text"  # text|voice
     raw_input: str
+    pre_extracted_slots: Optional[dict] = None
 
     # Agent outputs
     intent: Optional[IntentOutput] = None

@@ -472,7 +472,7 @@
                         </div>
                         <div>›</div>
                     </div>
-                    <div class="safe-list-item" onclick="openAppScreen('bhim://myupi/settings/delink/1', false)">
+                    <div class="safe-list-item" onclick="if(window.upiNumberId) { openAppScreen('bhim://myupi/settings/delink/' + window.upiNumberId, false); } else { alert('No UPI number linked'); }">
                         <div class="safe-icon">📱</div>
                         <div class="safe-text">
                             <div class="safe-title">UPI Number</div>
@@ -727,7 +727,16 @@
             document.getElementById('action-modal-content').innerHTML = `
                 <div style="font-weight:700; font-size:18px; margin-bottom:20px;">Delink Number</div>
                 <div style="margin-bottom:20px;">Remove ${screenData.number} (${screenData.vpa})?</div>
-                <button style="width:100%; padding:14px; background:#ef4444; color:#fff; border:none; border-radius:16px; font-weight:600;" onclick="executeActionWithPin('Delink Number', 'delink', '1')">Yes, Delink</button>
+                <button style="width:100%; padding:14px; background:#ef4444; color:#fff; border:none; border-radius:16px; font-weight:600;" onclick="executeActionWithPin('Delink Number', 'delink', '${screenData.id}')">Yes, Delink</button>
+            `;
+            modal.style.display = 'flex';
+        } else if (screenData.screen === 'chargeback') {
+            const modal = document.getElementById('action-modal');
+            document.getElementById('action-modal-content').innerHTML = `
+                <div style="font-weight:700; font-size:18px; margin-bottom:20px;">Raise Chargeback</div>
+                <div style="margin-bottom:20px;">Report an issue for payment to <b>${screenData.transaction.payee}</b> of ₹${screenData.transaction.amount}.</div>
+                <div style="margin-bottom:20px; font-size:14px; color:#64748b;">This will file a formal complaint with NPCI.</div>
+                <button style="width:100%; padding:14px; background:#ef4444; color:#fff; border:none; border-radius:16px; font-weight:600;" onclick="document.getElementById('action-modal').style.display='none'; executeActionWithPin('Raise Chargeback', 'chargeback', '${screenData.transaction.id}')">Submit Complaint</button>
             `;
             modal.style.display = 'flex';
         } else {
@@ -768,6 +777,7 @@
             // Initial load of data
             loadMandates();
             loadTransactions();
+            loadSafety();
             
         } catch(e) {
             document.getElementById('login-error').textContent = e.message;
@@ -794,6 +804,7 @@
         
         if(tabId === 'autopay') loadMandates();
         if(tabId === 'transactions') loadTransactions();
+        if(tabId === 'safe') loadSafety();
     }
 
     async function loadMandates() {
@@ -852,6 +863,19 @@
         list.innerHTML = html;
     }
 
+    async function loadSafety() {
+        if(!token) return;
+        try {
+            const r = await fetch('/api/safety?token=' + token);
+            if(r.ok) {
+                const data = await r.json();
+                if(data.upi_numbers && data.upi_numbers.length > 0) {
+                    window.upiNumberId = data.upi_numbers[0].id;
+                }
+            }
+        } catch(e) {}
+    }
+
     // Chat functionality
     function openChat(initialMsg = null) {
         document.getElementById('chat-screen').classList.add('open');
@@ -877,7 +901,8 @@
                     const parts = deepLink.split('/');
                     let action = parts.pop();
                     let entityId = parts.pop();
-                    if (action && !isNaN(action) && entityId === 'delink') {
+                    // If it's a settings action like delink, the URL is .../settings/delink/{id}
+                    if (entityId === 'delink') {
                         entityId = action;
                         action = 'delink';
                     }
@@ -1053,15 +1078,15 @@
         }
     }
 
-    function executeActionWithPin(actionName, actionType, id) {
-        requestPin(actionName, async (pin) => {
-            // API call to simulate action execution
+    function executeActionWithPin(actionName, actionType, id, existingPin = null) {
+        const run = async (pin) => {
             try {
-                await fetch('/api/execute', {
+                const r = await fetch('/api/execute', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({token, action: actionType, id: id})
+                    body: JSON.stringify({token, action: actionType, id: id, pin: pin})
                 });
+                if (!r.ok) { alert("Action failed."); return; }
                 alert(`✅ ${actionName} executed successfully!`);
                 // Reload data
                 loadMandates();
@@ -1069,7 +1094,13 @@
             } catch(e) {
                 alert("Action failed.");
             }
-        });
+        };
+
+        if (existingPin) {
+            run(existingPin);
+        } else {
+            requestPin(actionName, run);
+        }
     }
 
     function verifyPayeeAction() {

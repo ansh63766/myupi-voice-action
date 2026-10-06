@@ -117,9 +117,11 @@ async def startup():
     else:
         logger.info("Pre-loading ASR model into GPU...")
         import asyncio
-        from adapters.asr import get_asr_adapter
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, get_asr_adapter()._load_model)
+        def _preload():
+            from adapters.asr import get_asr_adapter
+            get_asr_adapter()._load_model()
+        asyncio.create_task(loop.run_in_executor(None, _preload))
         
     logger.info("MyUPI app started.")
 
@@ -345,6 +347,10 @@ async def chat(req: ChatRequest, db: AsyncSession = Depends(get_db)):
                     state.entity_resolution.needs_disambiguation.remove(slot_name)
                     if slot_name in state.entity_resolution.disambiguation_options:
                         del state.entity_resolution.disambiguation_options[slot_name]
+                        
+                    if state.audit.resolved_entity_ids is None:
+                        state.audit.resolved_entity_ids = {}
+                    state.audit.resolved_entity_ids[slot_name] = matched_id
                     state.policy = None
                     state.confirmation = None
                     state.needs_user_input = False
@@ -380,15 +386,16 @@ async def chat(req: ChatRequest, db: AsyncSession = Depends(get_db)):
         _conversation_states[state_key] = state
 
 
-    # Save user message
-    msg = Message(
-        id=str(uuid.uuid4()),
-        conversation_id=conv.id,
-        role="user",
-        content=req.message,
-    )
-    db.add(msg)
-    await db.commit()
+    # Save user message (skip system commands like __confirm__ or __cancel__)
+    if req.message and req.message.strip() and not req.message.startswith("__"):
+        msg = Message(
+            id=str(uuid.uuid4()),
+            conversation_id=conv.id,
+            role="user",
+            content=req.message,
+        )
+        db.add(msg)
+        await db.commit()
 
     # Handle cancel action from UI (user clicked Cancel on confirmation card)
     if req.message == '__cancel__':
@@ -414,12 +421,13 @@ async def chat(req: ChatRequest, db: AsyncSession = Depends(get_db)):
         resp_text = state.user_prompt
 
     # Save assistant message
-    if resp_text or state.error:
+    content_to_save = resp_text or state.user_prompt or state.error
+    if content_to_save and str(content_to_save).strip():
         amsg = Message(
             id=str(uuid.uuid4()),
             conversation_id=conv.id,
             role="assistant",
-            content=resp_text or state.error or "",
+            content=content_to_save,
             intent_label=state.intent.intent_label if state.intent else None,
             action_id=state.action_entry.action_id if state.action_entry else None,
         )
@@ -532,7 +540,7 @@ async def screen_delink(number_id: str, token: str, db: AsyncSession = Depends(g
     upi = result.scalar_one_or_none()
     if not upi:
         raise HTTPException(status_code=403, detail="Access denied")
-    return JSONResponse({"screen": "delink_number", "number": upi.number, "vpa": upi.vpa})
+    return JSONResponse({"screen": "delink_number", "id": upi.id, "number": upi.number, "vpa": upi.vpa})
 
 
 # ── UI Data Endpoints (REST) ──────────────────────────────────────────────────
@@ -604,6 +612,10 @@ async def execute_action(req: Request, db: AsyncSession = Depends(get_db)):
     
     sess, user = await get_session_and_user(token, db)
     
+    pin = data.get("pin")
+    expected = {"user-001": "1234", "user-002": "5678", "user-003": "9012"}.get(user.id)
+    if expected and pin != expected:
+        raise HTTPException(status_code=401, detail="Incorrect UPI PIN")
     if action == "pause":
         await db.execute(update(Mandate).where(Mandate.id == target_id, Mandate.user_id == user.id).values(status="PAUSED"))
     elif action == "resume":
@@ -617,15 +629,17 @@ async def execute_action(req: Request, db: AsyncSession = Depends(get_db)):
         result = await db.execute(stmt)
         old_txn = result.scalar_one_or_none()
         if old_txn:
-            import uuid, datetime
             new_txn = Transaction(
                 id=str(uuid.uuid4()),
                 user_id=user.id,
                 payee_name=old_txn.payee_name,
+                payee_vpa=old_txn.payee_vpa,
                 amount=old_txn.amount,
+                txn_type=old_txn.txn_type,
                 status="SUCCESS",
+                bank_name=old_txn.bank_name,
                 txn_ref=f"T{uuid.uuid4().hex[:8].upper()}",
-                created_at=datetime.datetime.utcnow(),
+                created_at=datetime.utcnow(),
                 eligible_chargeback=True
             )
             db.add(new_txn)

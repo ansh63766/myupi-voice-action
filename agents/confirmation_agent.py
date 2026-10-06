@@ -108,6 +108,7 @@ async def _get_entity_data(
     session: AsyncSession,
     action_entry: ActionEntry,
     entity_result: EntityResolutionResult,
+    user_id: str,
 ) -> dict:
     """
     Fetch real entity data from DB using resolved IDs.
@@ -119,7 +120,7 @@ async def _get_entity_data(
     for slot_name, resolved in entity_result.resolved.items():
         entity_id = resolved.resolved_id
 
-        if action_entry.disambiguation_source in ("user_active_mandates", "user_paused_mandates"):
+        if action_entry.disambiguation_source in ("user_active_mandates", "user_paused_mandates", "user_all_mandates"):
             stmt = select(Mandate).where(Mandate.id == entity_id)
             r = await session.execute(stmt)
             row = r.scalar_one_or_none()
@@ -160,7 +161,14 @@ async def _get_entity_data(
 
     # Safety switch defaults
     if action_entry.action_id == "safety_switch":
-        data.setdefault("action", "block/unblock")
+        from db.models import SafetySwitch
+        stmt = select(SafetySwitch).where(SafetySwitch.user_id == user_id)
+        r = await session.execute(stmt)
+        ss = r.scalar_one_or_none()
+        if ss and ss.is_active:
+            data.setdefault("action", "unblock")
+        else:
+            data.setdefault("action", "block")
 
     return data
 
@@ -178,6 +186,7 @@ class ConfirmationAgent:
         policy: PolicyDecision,
         language: Language,
         session: AsyncSession,
+        user_id: str,
         channel: str = "text",
     ) -> ConfirmationCard:
         """
@@ -210,7 +219,7 @@ class ConfirmationAgent:
             raise ValueError(f"No template found for {template_id} in {lang_code}")
 
         # Fetch real data from DB using resolved IDs
-        entity_data = await _get_entity_data(session, action_entry, entity_result)
+        entity_data = await _get_entity_data(session, action_entry, entity_result, user_id=user_id)
 
         # Render template (safe substitution — missing keys are left as-is)
         try:

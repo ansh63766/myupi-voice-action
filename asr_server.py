@@ -62,6 +62,8 @@ async def transcribe(request: Request, language: str = "en"):
         return JSONResponse({"error": "Model not loaded"}, status_code=500)
         
     try:
+        raw_path = None
+        wav_path = None
         audio_bytes = await request.body()
         if not audio_bytes:
             return JSONResponse({"error": "Empty body"}, status_code=400)
@@ -100,8 +102,9 @@ async def transcribe(request: Request, language: str = "en"):
         return JSONResponse({"error": str(e)}, status_code=500)
     finally:
         for p in (raw_path, wav_path):
-            try:
-                os.remove(p)
+            if p:
+                try:
+                    os.remove(p)
             except Exception:
                 pass
 

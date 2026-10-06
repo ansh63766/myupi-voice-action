@@ -108,6 +108,12 @@ class Orchestrator:
                 state.raw_input,
                 language_hint=None,
             )
+            # Merge deterministic pre_extracted_slots (e.g. from voice normalizer)
+            if state.pre_extracted_slots:
+                for k, v in state.pre_extracted_slots.items():
+                    if not getattr(state.intent.extracted_slots, k, None) and v:
+                        setattr(state.intent.extracted_slots, k, v)
+                        
             # Compute transcript hash for voice audit chain
             if state.voice_session_id:
                 state.audit.transcript_hash = state.audit.compute_transcript_hash(state.raw_input)
@@ -161,9 +167,9 @@ class Orchestrator:
 
         # If user responded to a disambiguation (tap-to-select)
         if selected_entity and state.entity_resolution and state.entity_resolution.needs_disambiguation:
-            slot_name = selected_entity.get("slot")
-            entity_id = selected_entity.get("id")
-            entity_label = selected_entity.get("label", entity_id)
+            slot_name = selected_entity.get("slot") or selected_entity.get("slot_name")
+            entity_id = selected_entity.get("id") or selected_entity.get("resolved_id")
+            entity_label = selected_entity.get("label") or selected_entity.get("resolved_label") or entity_id
             if slot_name and entity_id and state.entity_resolution:
                 from agents.types import ResolvedEntity
                 state.entity_resolution.resolved[slot_name] = ResolvedEntity(
@@ -176,6 +182,12 @@ class Orchestrator:
                 state.entity_resolution.needs_disambiguation.remove(slot_name)
                 if slot_name in state.entity_resolution.disambiguation_options:
                     del state.entity_resolution.disambiguation_options[slot_name]
+                
+                # Update audit chain
+                if state.audit.resolved_entity_ids is None:
+                    state.audit.resolved_entity_ids = {}
+                state.audit.resolved_entity_ids[slot_name] = entity_id
+
                 # Reset downstream state so policy + confirmation are re-evaluated fresh
                 state.policy = None
                 state.confirmation = None
@@ -201,6 +213,7 @@ class Orchestrator:
             language=state.intent.language.value,
         )
         state.slot_fill = slot_result
+        state.intent.extracted_slots = slot_result.filled_slots
 
         if not slot_result.slots_complete:
             if slot_result.fallback_deep_link:
@@ -277,6 +290,7 @@ class Orchestrator:
                     policy=policy,
                     language=state.intent.language,
                     session=db,
+                    user_id=state.user_id,
                     channel=state.channel,
                 )
                 state.confirmation = confirmation
