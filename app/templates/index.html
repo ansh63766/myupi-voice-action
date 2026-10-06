@@ -464,7 +464,7 @@
                 </div>
                 
                 <div class="white-card" style="padding: 0 16px;">
-                    <div class="safe-list-item" onclick="openSafetySwitch()">
+                    <div class="safe-list-item" onclick="openAppScreen('bhim://myupi/settings/safety-switch', false)">
                         <div class="safe-icon">🏦</div>
                         <div class="safe-text">
                             <div class="safe-title">Safety Switch</div>
@@ -472,7 +472,7 @@
                         </div>
                         <div>›</div>
                     </div>
-                    <div class="safe-list-item">
+                    <div class="safe-list-item" onclick="openAppScreen('bhim://myupi/settings/delink/1', false)">
                         <div class="safe-icon">📱</div>
                         <div class="safe-text">
                             <div class="safe-title">UPI Number</div>
@@ -480,7 +480,7 @@
                         </div>
                         <div>›</div>
                     </div>
-                    <div class="safe-list-item">
+                    <div class="safe-list-item" onclick="alert('Fraud Awareness section is coming soon!')">
                         <div class="safe-icon">🚨</div>
                         <div class="safe-text">
                             <div class="safe-title">Fraud Awareness</div>
@@ -528,6 +528,7 @@
             <div style="display:flex; gap:10px; align-items:center;">
                 <input type="text" id="real-chat-input" class="chat-input" style="background:#f1f5f9; padding:12px 16px; border-radius:24px;" placeholder="Message..." onkeypress="handleKey(event)">
                 <button class="send-btn active" onclick="sendChatMessage()">↑</button>
+                <button class="send-btn" id="mic-btn" style="background:#10b981;" onclick="toggleMic()">🎤</button>
             </div>
         </div>
     </div>
@@ -560,6 +561,164 @@
     let token = null;
     let convId = null;
     let currentActionContext = null; // Store context for PIN execution
+    let ws = null, mediaRecorder = null, isRecording = false;
+
+    function escapeHtml(str) {
+        return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function addStructuredResponse(text, data) {
+        const div = document.createElement('div');
+        div.className = 'msg assistant';
+        let html = text ? `<p style="margin-bottom:10px;font-weight:500;">${escapeHtml(text)}</p>` : '';
+        
+        if (data.transactions) {
+            html += '<div style="background:#fff; border-radius:12px; overflow:hidden; border:1px solid #e2e8f0; font-size:12px;">';
+            data.transactions.forEach(t => {
+                const date = new Date(t.date).toLocaleDateString('en-IN', {day:'2-digit', month:'short'});
+                html += `<div style="padding:10px; border-bottom:1px solid #e2e8f0; display:flex; justify-content:space-between;">
+                    <div><b>${escapeHtml(t.payee)}</b><br><span style="color:#64748b">${date}</span></div>
+                    <div style="text-align:right;"><b>₹${t.amount}</b><br><span style="color:${t.status==='SUCCESS'?'#10b981':'#ef4444'}">${t.status}</span></div>
+                </div>`;
+            });
+            html += '</div>';
+        } else if (data.mandates) {
+            html += '<div style="background:#fff; border-radius:12px; overflow:hidden; border:1px solid #e2e8f0; font-size:12px;">';
+            data.mandates.forEach(m => {
+                html += `<div style="padding:10px; border-bottom:1px solid #e2e8f0; display:flex; justify-content:space-between;">
+                    <div><b>${escapeHtml(m.merchant)}</b></div>
+                    <div style="text-align:right;"><b>₹${m.amount}/${m.frequency.toLowerCase()}</b><br><span style="color:#10b981">${m.status}</span></div>
+                </div>`;
+            });
+            html += '</div>';
+        }
+        
+        div.innerHTML = html;
+        document.getElementById('chat-messages').appendChild(div);
+        div.scrollIntoView({behavior: "smooth"});
+    }
+
+    async function toggleMic() {
+        if (isRecording) { stopMic(); return; }
+        if (!token || !convId) { alert('Please log in first.'); return; }
+        
+        const micBtn = document.getElementById('mic-btn');
+        let stream;
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch (e) {
+            alert('Microphone permission denied.');
+            return;
+        }
+        
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}/api/voice?token=${encodeURIComponent(token)}&conversation_id=${encodeURIComponent(convId)}`;
+        ws = new WebSocket(wsUrl);
+        
+        ws.onopen = async () => {
+            micBtn.textContent = '⏹';
+            micBtn.style.background = '#ef4444';
+            isRecording = true;
+            addChatMsg('user', '🎙️ Listening...');
+            try {
+                let options = {};
+                if (typeof MediaRecorder.isTypeSupported === 'function' && MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+                    options = { mimeType: 'audio/webm;codecs=opus' };
+                }
+                mediaRecorder = new MediaRecorder(stream, options);
+                mediaRecorder.ondataavailable = async (e) => {
+                    if (e.data.size > 0 && ws && ws.readyState === WebSocket.OPEN) {
+                        const buffer = await e.data.arrayBuffer();
+                        ws.send(buffer);
+                    }
+                };
+                mediaRecorder.onstop = () => {
+                    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'stop_speaking' }));
+                };
+                mediaRecorder.start(250);
+            } catch (e) {
+                stopMic();
+            }
+        };
+        
+        ws.onmessage = async (e) => {
+            if (typeof e.data !== 'string') return;
+            const msg = JSON.parse(e.data);
+            if (msg.type === 'transcript') {
+                const msgs = document.getElementById('chat-messages');
+                msgs.lastElementChild.innerHTML = '🎙️ ' + escapeHtml(msg.text);
+            } else if (msg.type === 'response_text') {
+                if (msg.response_data && (msg.response_data.transactions || msg.response_data.mandates)) {
+                    addStructuredResponse(msg.text, msg.response_data);
+                } else if (!msg.deep_link && !msg.confirmation_card) {
+                    addChatMsg('assistant', msg.text);
+                }
+                if (msg.deep_link) {
+                    addChatMsg('assistant', msg.text || "Please tap to proceed.");
+                    if (msg.response_data && msg.response_data.requires_pin) {
+                        addActionCard("Proceed with Action", "Requires UPI PIN to authenticate.", "Verify PIN", () => {
+                            requestPin("Authenticate Action", (pin) => {
+                                sendChatMessage('__confirm__');
+                            });
+                        });
+                    } else {
+                        addActionCard("Action Required", "Continue to execute this action.", "Proceed", () => {
+                            sendChatMessage('__confirm__');
+                        });
+                    }
+                }
+                if (msg.confirmation_card) {
+                    addActionCard("Confirm Action", msg.confirmation_card.text, "Confirm", () => {
+                        sendChatMessage('__confirm__');
+                    });
+                }
+            } else if (msg.type === 'done' || msg.type === 'tts_done') {
+                micBtn.disabled = false;
+            }
+        };
+        ws.onclose = () => { if(isRecording) stopMic(); }
+    }
+    
+    function stopMic() {
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+        if (mediaRecorder && mediaRecorder.stream) mediaRecorder.stream.getTracks().forEach(t => t.stop());
+        mediaRecorder = null;
+        isRecording = false;
+        const micBtn = document.getElementById('mic-btn');
+        if(micBtn) {
+            micBtn.textContent = '🎤';
+            micBtn.style.background = '#10b981';
+        }
+    }
+
+    async function openAppScreen(deepLink, pinRequired) {
+        const screenPath = deepLink.replace('bhim://myupi', '/app') + '?token=' + token;
+        let screenData = { screen: 'unknown', deep_link: deepLink };
+        try {
+            const r = await fetch(screenPath);
+            if (r.ok) screenData = await r.json();
+        } catch(e) {}
+        screenData._pinRequired = pinRequired;
+        
+        // Use our action modal for this
+        if (screenData.screen === 'safety_switch') {
+            const modal = document.getElementById('action-modal');
+            document.getElementById('action-modal-content').innerHTML = `
+                <div style="font-weight:700; font-size:18px; margin-bottom:20px;">Safety Switch</div>
+                <div style="margin-bottom:20px;">All outgoing payments are currently <b>${screenData.is_active ? 'Blocked' : 'Active'}</b>.</div>
+                <button style="width:100%; padding:14px; background:var(--primary); color:#fff; border:none; border-radius:16px; font-weight:600;" onclick="document.getElementById('action-modal').style.display='none'; alert('Safety switch toggled!')">Toggle Safety Switch</button>
+            `;
+            modal.style.display = 'flex';
+        } else if (screenData.screen === 'delink_number') {
+            const modal = document.getElementById('action-modal');
+            document.getElementById('action-modal-content').innerHTML = `
+                <div style="font-weight:700; font-size:18px; margin-bottom:20px;">Delink Number</div>
+                <div style="margin-bottom:20px;">Remove ${screenData.number} (${screenData.vpa})?</div>
+                <button style="width:100%; padding:14px; background:#ef4444; color:#fff; border:none; border-radius:16px; font-weight:600;" onclick="executeActionWithPin('Delink Number', 'delink', '1')">Yes, Delink</button>
+            `;
+            modal.style.display = 'flex';
+        }
+    }
 
     async function doLogin() {
         const username = document.getElementById('login-user').value;
@@ -677,6 +836,8 @@
         if (initialMsg) {
             document.getElementById('real-chat-input').value = initialMsg;
             sendChatMessage();
+        } else if (document.getElementById('chat-messages').children.length === 0) {
+            addChatMsg('assistant', "Hi! I'm your MyUPI AI Assistant. You can tap the mic 🎤 or type your question below.");
         }
     }
     function closeChat() {
@@ -700,9 +861,23 @@
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ token, conversation_id: convId, message: text, user_confirmed: (msgOverride==='__confirm__') })
         });
-        const data = await r.json();
-        
-        if (data.response_text && !data.deep_link) {
+        let data;
+        try {
+            if (!r.ok) {
+                const errData = await r.json();
+                throw new Error(errData.detail || "Server error");
+            }
+            data = await r.json();
+        } catch(e) {
+            addChatMsg('assistant', '⚠️ ' + e.message);
+            return;
+        }
+
+        if (data.error) {
+            addChatMsg('assistant', '⚠️ ' + data.error);
+        } else if (data.response_data && (data.response_data.transactions || data.response_data.mandates)) {
+            addStructuredResponse(data.response_text, data.response_data);
+        } else if (data.response_text && !data.deep_link) {
             addChatMsg('assistant', data.response_text);
         }
         
