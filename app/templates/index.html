@@ -598,6 +598,24 @@
         div.scrollIntoView({behavior: "smooth"});
     }
 
+    function addDisambiguationOptions(text, optionsMap) {
+        const div = document.createElement('div');
+        div.className = 'msg assistant';
+        let html = text ? `<p style="margin-bottom:10px;font-weight:500;">${escapeHtml(text)}</p>` : '';
+        html += '<div style="display:flex; flex-direction:column; gap:8px; margin-top:10px;">';
+        
+        Object.values(optionsMap).forEach(list => {
+            list.forEach(opt => {
+                html += `<button style="background:var(--primary); color:#fff; border:none; padding:10px 14px; border-radius:12px; font-weight:600; text-align:left; font-size:14px; cursor:pointer;" onclick="document.getElementById('real-chat-input').value='${escapeHtml(opt.resolved_label)}'; sendChatMessage();">${escapeHtml(opt.resolved_label)}</button>`;
+            });
+        });
+        html += '</div>';
+        
+        div.innerHTML = html;
+        document.getElementById('chat-messages').appendChild(div);
+        div.scrollIntoView({behavior: "smooth"});
+    }
+
     async function toggleMic() {
         if (isRecording) { stopMic(); return; }
         if (!token || !convId) { alert('Please log in first.'); return; }
@@ -648,7 +666,9 @@
                 const msgs = document.getElementById('chat-messages');
                 msgs.lastElementChild.innerHTML = '🎙️ ' + escapeHtml(msg.text);
             } else if (msg.type === 'response_text') {
-                if (msg.response_data && (msg.response_data.transactions || msg.response_data.mandates)) {
+                if (msg.disambiguation_options) {
+                    addDisambiguationOptions(msg.text, msg.disambiguation_options);
+                } else if (msg.response_data && (msg.response_data.transactions || msg.response_data.mandates)) {
                     addStructuredResponse(msg.text, msg.response_data);
                 } else if (!msg.deep_link && !msg.confirmation_card) {
                     addChatMsg('assistant', msg.text);
@@ -875,15 +895,19 @@
 
         if (data.error) {
             addChatMsg('assistant', '⚠️ ' + data.error);
+        } else if (data.disambiguation_options) {
+            addDisambiguationOptions(data.user_prompt || data.response_text, data.disambiguation_options);
         } else if (data.response_data && (data.response_data.transactions || data.response_data.mandates)) {
-            addStructuredResponse(data.response_text, data.response_data);
+            addStructuredResponse(data.response_text || data.user_prompt, data.response_data);
+        } else if (data.user_prompt) {
+            addChatMsg('assistant', data.user_prompt);
         } else if (data.response_text && !data.deep_link) {
             addChatMsg('assistant', data.response_text);
         }
         
         if (data.deep_link) {
             // It's a deep link, usually to an action. Show it.
-            addChatMsg('assistant', data.response_text || "Please tap to proceed.");
+            addChatMsg('assistant', data.response_text || data.user_prompt || "Please tap to proceed.");
             if (data.response_data && data.response_data.requires_pin) {
                 // If the backend indicates PIN is required, we show the PIN pad automatically or via a button.
                 addActionCard("Proceed with Action", "Requires UPI PIN to authenticate.", "Verify PIN", () => {

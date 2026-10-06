@@ -118,12 +118,15 @@ class Orchestrator:
             state.action_entry = self.registry_lookup.lookup(state.intent)
             if state.action_entry is None:
                 if state.intent.intent_label == "ambiguous":
-                    target = state.intent.extracted_slots.merchant_name or state.intent.extracted_slots.topic or "your"
-                    state.error = (
-                        f"Did you want to **temporarily pause** or **permanently cancel** {target} AutoPay?\n\n"
-                        f"- Say **'Pause {target}'** to pause debits for now.\n"
-                        f"- Say **'Revoke {target}'** to cancel the mandate completely."
-                    )
+                    target = state.intent.extracted_slots.merchant_name or state.intent.extracted_slots.topic
+                    if target:
+                        state.error = (
+                            f"Did you want to **temporarily pause** or **permanently cancel** {target} AutoPay?\n\n"
+                            f"- Say **'Pause {target}'** to pause debits for now.\n"
+                            f"- Say **'Revoke {target}'** to cancel the mandate completely."
+                        )
+                    else:
+                        state.error = "I didn't quite catch that. Could you please rephrase?"
                 elif state.intent.intent_label == "unsupported":
                     state.error = (
                         "I cannot process direct peer-to-peer money transfers in this prototype. "
