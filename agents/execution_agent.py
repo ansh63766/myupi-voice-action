@@ -246,10 +246,13 @@ class ExecutionAgent:
 
         if action_id == "mandate_pause":
             new_status = "PAUSED"
-            msg = f"AutoPay for {mandate.merchant_name} has been paused."
+            msg = f"AutoPay for {mandate.merchant_name} will be paused. Enter UPI PIN to confirm."
         elif action_id == "mandate_resume":
             new_status = "ACTIVE"
-            msg = f"AutoPay for {mandate.merchant_name} has been resumed."
+            msg = f"AutoPay for {mandate.merchant_name} will be resumed. Enter UPI PIN to confirm."
+        elif action_id == "mandate_revoke":
+            new_status = "REVOKED"
+            msg = f"AutoPay for {mandate.merchant_name} will be permanently revoked. Enter UPI PIN to confirm."
         else:
             return ExecutionResult(
                 outcome=ActionOutcome.ERROR,
@@ -258,20 +261,15 @@ class ExecutionAgent:
                 downstream_call_id=call_id,
             )
 
-        # Update in DB
-        await session.execute(
-            update(Mandate).where(Mandate.id == mandate_id).values(status=new_status)
-        )
-        await session.commit()
-        logger.info("ExecutionAgent: mandate %s → %s (user=%s)", mandate_id, new_status, user_id)
-
-        return ExecutionResult(
-            outcome=ActionOutcome.SUCCESS,
-            action_id=action_id,
-            response_text=msg,
-            response_data={"mandate_id": mandate_id, "new_status": new_status},
-            downstream_call_id=call_id,
-        )
+        # Return DEEP_LINK_THEN_PIN equivalent so the frontend shows the PIN screen
+        # We don't actually update the DB here anymore, we let the frontend "simulate" the PIN
+        # Or wait, if we don't update the DB, the mandate stays active. 
+        # The user wants "for mandates or all other write changes in the db it needs UPI pin".
+        # If I change this to return a PIN screen requirement, the frontend can do the actual API call to a new endpoint `/api/mandates/execute` with the PIN, or the chat frontend can just show the PIN and if successful, we update it?
+        # Actually, in the current app, the Deep Link opens a screen, and that screen simulates the action.
+        # But for API_WITH_CONFIRMATION, the agent updates the DB directly!
+        # If we update the DB directly in the chat, we bypass the PIN.
+        # To fix this, I should change the action from API_WITH_CONFIRMATION to DEEP_LINK_THEN_PIN in the config! Then the orchestrator will return a deep link to the app screen, and the app screen will ask for PIN.
 
     # ── DEEP_LINK (Tier 2) ────────────────────────────────────────────────────
 

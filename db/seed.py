@@ -146,6 +146,12 @@ TRANSACTIONS = [
     # Amit's transactions
     {"user_id": "user-003", "payee_name": "Jio", "payee_vpa": "jio@jiomoney", "amount": 299.0, "txn_type": "DEBIT", "status": "SUCCESS", "bank_name": "Axis Bank", "created_at": _days_ago(1), "eligible_chargeback": False},
     {"user_id": "user-003", "payee_name": "IRCTC", "payee_vpa": "irctc@sbi", "amount": 1850.0, "txn_type": "DEBIT", "status": "SUCCESS", "bank_name": "Axis Bank", "created_at": _days_ago(4), "eligible_chargeback": True},
+    # More dummy data
+    {"user_id": "user-001", "payee_name": "Zudio", "payee_vpa": "zudio@upi", "amount": 1299.0, "txn_type": "DEBIT", "status": "SUCCESS", "bank_name": "HDFC Bank", "created_at": _days_ago(1), "eligible_chargeback": True},
+    {"user_id": "user-001", "payee_name": "SXXXXXA PXXXXXXR", "payee_vpa": "sharma@upi", "amount": 1499.0, "txn_type": "DEBIT", "status": "SUCCESS", "bank_name": "SBI", "created_at": _days_ago(1), "eligible_chargeback": False},
+    {"user_id": "user-001", "payee_name": "WATERWALA LABS PVT", "payee_vpa": "water@upi", "amount": 1425.0, "txn_type": "DEBIT", "status": "SUCCESS", "bank_name": "SBI", "created_at": _days_ago(2), "eligible_chargeback": True},
+    {"user_id": "user-001", "payee_name": "BLINKIT", "payee_vpa": "blinkit@upi", "amount": 3309.55, "txn_type": "DEBIT", "status": "SUCCESS", "bank_name": "Axis", "created_at": _days_ago(2), "eligible_chargeback": True},
+    {"user_id": "user-001", "payee_name": "I FITNESS ZONE", "payee_vpa": "fitness@upi", "amount": 6000.0, "txn_type": "DEBIT", "status": "SUCCESS", "bank_name": "Axis", "created_at": _days_ago(3), "eligible_chargeback": True},
 ]
 
 SAFETY_SWITCHES = [
@@ -205,10 +211,14 @@ FAQ_KB = [
     {"question": "Transaction fail kyu hua?", "answer": "UPI transaction fail hone ke kai karan ho sakte hain: insufficient balance, bank server down, VPA galat, ya network issue. BHIM app mein details check karein.", "language": "hi-Latn"},
     {"question": "AutoPay kaise band kare?", "answer": "Aap is chat mein bol sakte hain 'Swiggy ka autopay band karo' ya 'Netflix mandate revoke karo'. Main confirm karke aagey badhta hoon.", "language": "hi-Latn"},
     {"question": "UPI PIN kya hai?", "answer": "UPI PIN aapka secret 4-6 digit PIN hai jo payment confirm karne ke liye use hota hai. Ise kabhi kisi ke saath share mat karein.", "language": "hi-Latn"},
-    {"question": "What is UPI ID / VPA?", "answer": "A VPA (Virtual Payment Address) like 'name@bankname' is your unique UPI identifier. You can share it to receive money without sharing your bank account number.", "language": "en"},
     {"question": "How to raise a chargeback?", "answer": "To raise a chargeback, say 'raise chargeback for [merchant] payment'. I'll find the transaction and take you to the dispute screen in the app.", "language": "en"},
     {"question": "UPI transaction kaise dekhein?", "answer": "अपने UPI transactions देखने के लिए बस कहें 'मेरे transactions दिखाओ' या 'recent payments show karo'।", "language": "hi"},
     {"question": "Mandate pause kaise karein?", "answer": "Mandate pause karne ke liye kahein 'Swiggy wala autopay pause karo'. Main aapke account mein dhundhkar confirm karoonga.", "language": "hi"},
+    {"question": "Can I pause an AutoPay mandate?", "answer": "Yes, you can pause any active AutoPay mandate temporarily and resume it later from the UPI Autopay section.", "language": "en"},
+    {"question": "What happens if my transaction fails but money is debited?", "answer": "Don't worry. The money is usually refunded within 3-5 business days. If it's a merchant transaction, you can raise a dispute.", "language": "en"},
+    {"question": "How do I find a past transaction?", "answer": "Go to the Transactions tab to see your consolidated UPI activity. You can filter by date or search for specific payees.", "language": "en"},
+    {"question": "Can I raise a chargeback for money sent to a friend?", "answer": "No. Chargebacks or disputes can only be raised for merchant payments, not for person-to-person (P2P) transfers.", "language": "en"},
+    {"question": "Dost ko bheja paisa wapas kaise lu?", "answer": "Person-to-person transfers me chargeback nahi hota. Agar galti se paisa chala gaya hai toh apne bank se sampark karein.", "language": "hi-Latn"},
 ]
 
 

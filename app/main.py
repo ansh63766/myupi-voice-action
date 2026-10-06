@@ -18,7 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agents.types import AuditChain, PipelineState
@@ -465,6 +465,87 @@ async def screen_delink(number_id: str, token: str, db: AsyncSession = Depends(g
         raise HTTPException(status_code=403, detail="Access denied")
     return JSONResponse({"screen": "delink_number", "number": upi.number, "vpa": upi.vpa})
 
+
+# ── UI Data Endpoints (REST) ──────────────────────────────────────────────────
+
+@app.get("/api/mandates")
+async def get_mandates(token: str, db: AsyncSession = Depends(get_db)):
+    sess, user = await get_session_and_user(token, db)
+    stmt = select(Mandate).where(Mandate.user_id == user.id).order_by(Mandate.start_date.desc())
+    result = await db.execute(stmt)
+    mandates = result.scalars().all()
+    data = [
+        {
+            "id": m.id,
+            "merchant": m.merchant_name,
+            "bank": m.bank_name,
+            "amount": float(m.amount),
+            "frequency": m.frequency,
+            "status": m.status,
+            "next_debit": m.next_debit_date.isoformat() if m.next_debit_date else None,
+        }
+        for m in mandates
+    ]
+    return JSONResponse({"mandates": data})
+
+@app.get("/api/transactions")
+async def get_transactions(token: str, db: AsyncSession = Depends(get_db)):
+    sess, user = await get_session_and_user(token, db)
+    stmt = select(Transaction).where(Transaction.user_id == user.id).order_by(Transaction.created_at.desc()).limit(20)
+    result = await db.execute(stmt)
+    txns = result.scalars().all()
+    data = [
+        {
+            "id": t.id,
+            "ref": t.txn_ref,
+            "payee": t.payee_name,
+            "amount": float(t.amount),
+            "type": t.txn_type,
+            "status": t.status,
+            "date": t.created_at.isoformat(),
+            "bank": t.bank_name,
+            "eligible_chargeback": t.eligible_chargeback,
+        }
+        for t in txns
+    ]
+    return JSONResponse({"transactions": data})
+
+@app.get("/api/safety")
+async def get_safety(token: str, db: AsyncSession = Depends(get_db)):
+    sess, user = await get_session_and_user(token, db)
+    stmt = select(SafetySwitch).where(SafetySwitch.user_id == user.id)
+    result = await db.execute(stmt)
+    ss = result.scalar_one_or_none()
+    
+    stmt2 = select(UPINumber).where(UPINumber.user_id == user.id)
+    result2 = await db.execute(stmt2)
+    numbers = [{"id": n.id, "number": n.number} for n in result2.scalars().all()]
+    
+    return JSONResponse({
+        "safety_switch": ss.is_active if ss else False,
+        "upi_numbers": numbers
+    })
+
+@app.post("/api/execute")
+async def execute_action(req: Request, db: AsyncSession = Depends(get_db)):
+    data = await req.json()
+    token = data.get("token")
+    action = data.get("action")
+    target_id = data.get("id")
+    
+    sess, user = await get_session_and_user(token, db)
+    
+    if action == "pause":
+        await db.execute(update(Mandate).where(Mandate.id == target_id, Mandate.user_id == user.id).values(status="PAUSED"))
+    elif action == "resume":
+        await db.execute(update(Mandate).where(Mandate.id == target_id, Mandate.user_id == user.id).values(status="ACTIVE"))
+    elif action == "revoke":
+        await db.execute(update(Mandate).where(Mandate.id == target_id, Mandate.user_id == user.id).values(status="REVOKED"))
+    elif action == "chargeback":
+        await db.execute(update(Transaction).where(Transaction.id == target_id, Transaction.user_id == user.id).values(chargeback_raised=True))
+    
+    await db.commit()
+    return JSONResponse({"status": "ok"})
 
 # ── Health check ───────────────────────────────────────────────────────────────
 

@@ -111,8 +111,8 @@ actions:
       - merchant_name
     disambiguation_source: user_active_mandates
     risk_tier: 1
-    execution_mode: API_WITH_CONFIRMATION
-    deep_link_template: null
+    execution_mode: DEEP_LINK_THEN_PIN
+    deep_link_template: "bhim://myupi/mandates/{mandate_id}/pause"
     confirmation_template_id: confirm_mandate_pause_v2
     voice_safe: true
     version: "1.0"
@@ -132,8 +132,8 @@ actions:
       - merchant_name
     disambiguation_source: user_paused_mandates
     risk_tier: 1
-    execution_mode: API_WITH_CONFIRMATION
-    deep_link_template: null
+    execution_mode: DEEP_LINK_THEN_PIN
+    deep_link_template: "bhim://myupi/mandates/{mandate_id}/resume"
     confirmation_template_id: confirm_mandate_resume_v1
     voice_safe: true
     version: "1.0"
@@ -155,7 +155,7 @@ actions:
       - merchant_name
     disambiguation_source: user_active_mandates
     risk_tier: 2
-    execution_mode: DEEP_LINK
+    execution_mode: DEEP_LINK_THEN_PIN
     deep_link_template: "bhim://myupi/mandates/{mandate_id}/revoke"
     confirmation_template_id: confirm_mandate_revoke_v1
     voice_safe: true
