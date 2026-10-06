@@ -284,17 +284,20 @@ async def chat(req: ChatRequest, db: AsyncSession = Depends(get_db)):
             state.needs_user_input = False
             state.done = False
         elif req.selected_entity:
-            # User tapped a disambiguation option — orchestrator handles the merge
+            # User tapped a disambiguation option button.
+            # The orchestrator NEEDS state.entity_resolution to still be set to merge this tap.
+            # So we only touch what needs resetting — DO NOT clear entity_resolution.
             state.needs_user_input = False
             state.done = False
         elif req.message.strip():
-            # Update the raw_input so orchestrator knows the user typed something new
-            state.raw_input = req.message.strip()
-            
+            msg_text = req.message.strip()
+            state.raw_input = msg_text  # Always update raw_input
+
+            # Case A: We were waiting for a slot fill answer (e.g., "Which bank?")
             if state.slot_fill and state.slot_fill.pending_request:
                 missing_slot = state.slot_fill.pending_request.missing_slot
                 state.intent.extracted_slots = _orchestrator.slot_filler.merge_new_input(
-                    state.intent.extracted_slots, req.message, missing_slot
+                    state.intent.extracted_slots, msg_text, missing_slot
                 )
                 state.slot_fill = None
                 state.entity_resolution = None
@@ -303,13 +306,53 @@ async def chat(req: ChatRequest, db: AsyncSession = Depends(get_db)):
                 state.user_prompt = None
                 state.error = None
                 state.done = False
+
             elif state.entity_resolution and state.entity_resolution.needs_disambiguation:
-                # User typed a reply to a disambiguation prompt.
-                # Do not clear state.entity_resolution here so orchestrator can handle it.
-                state.needs_user_input = False
-                state.done = False
-                state.error = None
+                # Case B: We were waiting for a disambiguation tap, but user TYPED instead.
+                # Check if their text looks like it matches one of the options (e.g. "Swiggy One").
+                # If it doesn't clearly select an option, treat it as a FRESH request.
+                slot_name = state.entity_resolution.needs_disambiguation[0]
+                options = state.entity_resolution.disambiguation_options.get(slot_name, {})
+                # Try to find a direct match in the option labels
+                matched_id = None
+                for opt_id, opt_label in options.items():
+                    # Check if the user's typed text is a substring of a label (case-insensitive)
+                    if msg_text.lower() in opt_label.lower():
+                        matched_id = opt_id
+                        break
+
+                if matched_id:
+                    # User typed something that maps to an option — resolve it directly
+                    from agents.types import ResolvedEntity
+                    opt_label = options[matched_id]
+                    state.entity_resolution.resolved[slot_name] = ResolvedEntity(
+                        slot_name=slot_name,
+                        raw_text=msg_text,
+                        resolved_id=matched_id,
+                        resolved_label=opt_label,
+                        confidence=1.0,
+                    )
+                    state.entity_resolution.needs_disambiguation.remove(slot_name)
+                    del state.entity_resolution.disambiguation_options[slot_name]
+                    state.policy = None
+                    state.confirmation = None
+                    state.needs_user_input = False
+                    state.user_prompt = None
+                    state.error = None
+                    state.done = False
+                else:
+                    # User typed a completely new command — start fresh
+                    _prune_states()
+                    state = PipelineState(
+                        user_id=user.id,
+                        session_id=sess.id,
+                        conversation_id=conv.id,
+                        channel=conv.channel,
+                        raw_input=msg_text,
+                    )
+                    _conversation_states[state_key] = state
             else:
+                # Generic continuation (e.g., typing after an error)
                 state.needs_user_input = False
                 state.done = False
                 state.error = None
@@ -324,6 +367,7 @@ async def chat(req: ChatRequest, db: AsyncSession = Depends(get_db)):
             raw_input=req.message,
         )
         _conversation_states[state_key] = state
+
 
     # Save user message
     msg = Message(

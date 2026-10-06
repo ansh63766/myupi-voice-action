@@ -153,7 +153,7 @@ actions:
     optional_slots:
       - bank_name
       - merchant_name
-    disambiguation_source: user_active_mandates
+    disambiguation_source: user_all_mandates
     risk_tier: 2
     execution_mode: DEEP_LINK_THEN_PIN
     deep_link_template: "bhim://myupi/mandates/{mandate_id}/revoke"

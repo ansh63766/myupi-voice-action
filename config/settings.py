@@ -31,8 +31,8 @@ class ASRConfig(BaseModel):
 
 class FuzzyConfig(BaseModel):
     provider: str = "rapidfuzz"
-    resolve_threshold: float = 85.0
-    disambiguate_threshold: float = 60.0
+    resolve_threshold: float = 90.0
+    disambiguate_threshold: float = 70.0
     max_candidates: int = 5
 
 

@@ -25,6 +25,7 @@ _SOURCE_MAP = {
     "user_transactions": (Transaction, "payee_name", "payee_name"),
     "user_active_mandates": (Mandate, "merchant_name", "merchant_name"),
     "user_paused_mandates": (Mandate, "merchant_name", "merchant_name"),
+    "user_all_mandates": (Mandate, "merchant_name", "merchant_name"),
     "user_saved_payees": (Payee, "display_name", "display_name"),
     "user_upi_numbers": (UPINumber, "number", "vpa"),
     "user_eligible_transactions": (Transaction, "payee_name", "payee_name"),
@@ -84,7 +85,7 @@ def _build_label(candidate: dict, source_name: str) -> str:
     if row is None:
         return candidate["text"]
 
-    if source_name in ("user_active_mandates", "user_paused_mandates"):
+    if source_name in ("user_active_mandates", "user_paused_mandates", "user_all_mandates"):
         return f"{row.merchant_name} ({row.bank_name}, ₹{row.amount}/{row.frequency.lower()})"
     elif source_name in ("user_transactions", "user_eligible_transactions"):
         return f"{row.payee_name} — ₹{row.amount} on {row.created_at.strftime('%d %b')}"
