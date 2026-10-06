@@ -181,6 +181,18 @@ class Orchestrator:
                 state.confirmation = None
                 state.needs_user_input = False
                 state.user_prompt = None
+        elif not selected_entity and state.entity_resolution and state.entity_resolution.needs_disambiguation and state.raw_input:
+            slot_name = state.entity_resolution.needs_disambiguation[0]
+            state.intent.extracted_slots = self.slot_filler.merge_new_input(
+                state.intent.extracted_slots,
+                state.raw_input,
+                slot_name,
+            )
+            state.entity_resolution = None
+            state.policy = None
+            state.confirmation = None
+            state.needs_user_input = False
+            state.user_prompt = None
 
         slot_result = self.slot_filler.check(
             action_entry=action_entry,
