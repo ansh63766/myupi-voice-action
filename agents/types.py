@@ -59,6 +59,7 @@ class ExtractedSlots(BaseModel):
     txn_id: Optional[str] = None       # raw text reference, not a DB ID
     topic: Optional[str] = None
     reason: Optional[str] = None
+    count: Optional[str] = None
 
     def to_dict(self) -> dict[str, str]:
         return {k: v for k, v in self.model_dump().items() if v is not None}

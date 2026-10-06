@@ -16,6 +16,7 @@ from agents.types import (
     ActionOutcome,
     ConfirmationCard,
     EntityResolutionResult,
+    ExtractedSlots,
     ExecutionMode,
     ExecutionResult,
     PolicyDecision,
@@ -47,6 +48,7 @@ class ExecutionAgent:
         session: AsyncSession,
         user_id: str,
         channel: str = "text",
+        slots: ExtractedSlots = None,
     ) -> ExecutionResult:
         mode = policy.execution_mode
         action_id = action_entry.action_id
@@ -58,7 +60,7 @@ class ExecutionAgent:
         )
 
         if mode == ExecutionMode.API_DIRECT:
-            result = await self._api_direct(action_entry, entity_result, session, user_id, call_id)
+            result = await self._api_direct(action_entry, entity_result, session, user_id, call_id, slots)
         elif mode == ExecutionMode.API_WITH_CONFIRMATION:
             result = await self._api_with_confirmation(action_entry, entity_result, session, user_id, call_id)
         elif mode == ExecutionMode.DEEP_LINK:
@@ -109,11 +111,12 @@ class ExecutionAgent:
         session: AsyncSession,
         user_id: str,
         call_id: str,
+        slots: ExtractedSlots = None,
     ) -> ExecutionResult:
         action_id = action_entry.action_id
 
         if action_id == "txn_view":
-            return await self._read_transactions(session, user_id, entity_result, call_id)
+            return await self._read_transactions(session, user_id, entity_result, call_id, slots)
         elif action_id == "mandate_view":
             return await self._read_mandates(session, user_id, entity_result, call_id)
         elif action_id == "payee_context":
@@ -133,8 +136,15 @@ class ExecutionAgent:
                 downstream_call_id=call_id,
             )
 
-    async def _read_transactions(self, session, user_id, entity_result, call_id) -> ExecutionResult:
-        stmt = select(Transaction).where(Transaction.user_id == user_id).order_by(Transaction.created_at.desc()).limit(10)
+    async def _read_transactions(self, session, user_id, entity_result, call_id, slots: ExtractedSlots = None) -> ExecutionResult:
+        limit_val = 10
+        if slots and slots.count:
+            import re
+            m = re.search(r'\d+', slots.count)
+            if m:
+                limit_val = int(m.group(0))
+        
+        stmt = select(Transaction).where(Transaction.user_id == user_id).order_by(Transaction.created_at.desc()).limit(limit_val)
         result = await session.execute(stmt)
         txns = result.scalars().all()
         data = [

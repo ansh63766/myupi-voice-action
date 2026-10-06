@@ -37,6 +37,7 @@ _INTENT_SCHEMA = {
                 "txn_id": {"type": "string"},
                 "topic": {"type": "string"},
                 "reason": {"type": "string"},
+                "count": {"type": "string", "description": "Number of items requested, e.g. '3', '5', 'last 10'"}
             },
             "additionalProperties": False,
         },
@@ -65,7 +66,7 @@ def _build_system_prompt(valid_intents: list[str]) -> str:
 
 Your ONLY job:
 1. Identify the user's intent from the allowed list below.
-2. Extract any raw text values the user mentioned (names, amounts, dates, refs) — as-is, verbatim.
+2. Extract any raw text values the user mentioned (names, amounts, dates, refs, count) — as-is, verbatim.
 3. Identify the script/language used (en, hi, hi-Latn).
 4. Output a confidence score (0.0 to 1.0).
 
@@ -87,6 +88,9 @@ Allowed intent labels:
 EXAMPLES:
 User: "Pause Swiggy autopay"
 {{"intent_label": "pause_autopay", "extracted_slots": {{"merchant_name": "Swiggy"}}, "language": "en", "confidence": 0.96}}
+
+User: "Show me last 3 transactions"
+{{"intent_label": "show_transactions", "extracted_slots": {{"count": "3"}}, "language": "en", "confidence": 0.98}}
 
 User: "mere pichle transactions dikhao"
 {{"intent_label": "show_transactions", "extracted_slots": {{}}, "language": "hi-Latn", "confidence": 0.95}}

@@ -295,6 +295,7 @@ class Orchestrator:
             session=db,
             user_id=state.user_id,
             channel=state.channel,
+            slots=state.intent.extracted_slots,
         )
         state.execution = exec_result
         state.audit.downstream_call_id = exec_result.downstream_call_id
