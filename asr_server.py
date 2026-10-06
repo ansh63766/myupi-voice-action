@@ -20,7 +20,7 @@ async def startup_event():
     global asr_model
     logger.info("Starting ASR standalone server...")
     logger.info("Loading ASR model into GPU...")
-    from nemo.collections.asr.models import EncDecMultiTaskModel
+    import sys
     
     # Check paths
     candidate_paths = [
@@ -33,23 +33,25 @@ async def startup_event():
     model_dir = None
     for cp in candidate_paths:
         if cp and os.path.isdir(cp):
-            model_dir = cp
-            break
+            nemo_file = os.path.join(cp, "nemo", "indic_transcribe_flex.nemo")
+            loader_file = os.path.join(cp, "nemo", "load_nemo.py")
+            if os.path.exists(nemo_file) and os.path.exists(loader_file):
+                model_dir = cp
+                break
             
     if not model_dir:
-        model_dir = candidate_paths[-1] # fallback to huggingface hub
+        logger.error("Could not find ASR model directory containing load_nemo.py")
+        return
         
     logger.info(f"Using model path: {model_dir}")
     try:
-        if os.path.isdir(model_dir):
-            nemo_path = os.path.join(model_dir, "nemo", "indic_transcribe_flex.nemo")
-            if os.path.exists(nemo_path):
-                asr_model = EncDecMultiTaskModel.restore_from(nemo_path)
-            else:
-                asr_model = EncDecMultiTaskModel.from_pretrained(model_name="bodhan-ai/indic-transcribe-flex")
-        else:
-            asr_model = EncDecMultiTaskModel.from_pretrained(model_name=model_dir)
-            
+        # Use the model's own loader shipped inside the repo
+        nemo_loader_path = os.path.join(model_dir, "nemo")
+        if nemo_loader_path not in sys.path:
+            sys.path.insert(0, nemo_loader_path)
+
+        from load_nemo import load_nemo_model
+        asr_model = load_nemo_model(model_dir)
         logger.info("ASR model loaded successfully.")
     except Exception as e:
         logger.error(f"Failed to load ASR model: {e}")
