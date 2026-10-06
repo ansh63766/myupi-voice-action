@@ -568,7 +568,7 @@ async def get_mandates(token: str, db: AsyncSession = Depends(get_db)):
 @app.get("/api/transactions")
 async def get_transactions(token: str, db: AsyncSession = Depends(get_db)):
     sess, user = await get_session_and_user(token, db)
-    stmt = select(Transaction).where(Transaction.user_id == user.id).order_by(Transaction.created_at.desc()).limit(20)
+    stmt = select(Transaction).where(Transaction.user_id == user.id).order_by(Transaction.created_at.desc()).limit(50)
     result = await db.execute(stmt)
     txns = result.scalars().all()
     data = [

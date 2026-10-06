@@ -142,7 +142,7 @@ class ExecutionAgent:
             import re
             m = re.search(r'\d+', slots.count)
             if m:
-                limit_val = int(m.group(0))
+                limit_val = min(int(m.group(0)), 50)
         
         stmt = select(Transaction).where(Transaction.user_id == user_id).order_by(Transaction.created_at.desc()).limit(limit_val)
         result = await session.execute(stmt)
