@@ -102,7 +102,7 @@ class Orchestrator:
             )
 
         # ── Step 1: Intent ─────────────────────────────────────────────────────
-        if state.intent is None:
+        if state.intent is None and state.raw_input != "__confirm__":
             logger.info("Orchestrator [Step 1]: Intent classification")
             state.intent = await self.intent_agent.classify(
                 state.raw_input,

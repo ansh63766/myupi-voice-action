@@ -398,9 +398,20 @@ def run_all_tests() -> None:
 
         # delink
         conv = new_conversation(client, rahul_token)
-        data = auto_drive(client, rahul_token, conv, "Delink my mobile number")
-        T.case("delink flow reached deep_link or confirmation",
-               bool(data.get("deep_link") or data.get("confirmation_card") or data.get("error")))
+        data = chat(client, rahul_token, conv, "Delink my mobile number")
+        T.case("delink prompt for missing 'number' slot",
+               data.get("needs_input") is True and
+               "mobile number" in (data.get("user_prompt") or "").lower())
+
+        # Answer the slot, then continue
+        data = chat(client, rahul_token, conv, "9876543210")
+        if data.get("disambiguation_options"):
+            data = tap_first_option(client, rahul_token, conv, data)
+        if data.get("confirmation_card"):
+            data = chat(client, rahul_token, conv, "", confirmed=True)
+
+        T.case("delink flow reaches deep_link",
+               "/delink/" in (data.get("deep_link") or ""))
 
 
         # ══════════════════════════════════════════════════════════════════
@@ -568,7 +579,7 @@ def run_all_tests() -> None:
                     by_outcome[a.outcome] = by_outcome.get(a.outcome, 0) + 1
                 return by_outcome
 
-        audits = asyncio.get_event_loop().run_until_complete(count_audits())
+        audits = asyncio.run(count_audits())
         T.case("audit log has entries", sum(audits.values()) > 0)
         T.info(f"audit outcomes so far: {audits}")
         T.case("at least one SUCCESS audit", audits.get("SUCCESS", 0) > 0)

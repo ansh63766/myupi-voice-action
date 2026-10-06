@@ -89,8 +89,8 @@ class OpenAICompatibleAdapter(LLMAdapter):
         sub_sep = "-" * 60
         logger.info(
             f"\n\033[94m{sep}\n[LLM REQUEST - JSON]\n{sep}\033[0m\n"
-            f"\033[33mSYSTEM PROMPT:\n{full_system}\033[0m\n{sub_sep}\n"
-            f"\033[36mUSER MESSAGE:\n{user_message}\033[0m\n\033[94m{sep}\033[0m"
+            f"\033[33mSYSTEM PROMPT:\n{full_system[:400]}...\033[0m\n{sub_sep}\n"
+            f"\033[36mUSER MESSAGE:\n{user_message[:200]}...\033[0m\n\033[94m{sep}\033[0m"
         )
         try:
             response = await client.chat.completions.create(

@@ -21,8 +21,10 @@ _AMOUNT_PATTERNS = [
 
 # Phone number patterns
 _PHONE_PATTERNS = [
-    r"\+91\s*(\d{10})",
-    r"(?:91)?(\d{10})",
+    # +91 followed by exactly 10 digits (allow arbitrary whitespace / NBSP between)
+    r"\+\s*9\s*1[^\d]{0,3}(\d{10})(?:\D|$)",
+    # bare 10-digit starting with 6-9 (Indian mobile)
+    r"(?<!\d)([6-9]\d{9})(?!\d)",
 ]
 
 # Transaction ref patterns (16-char alphanumeric)
@@ -80,7 +82,7 @@ class VoiceNormalizer:
             if m:
                 amount_str = m.group(1).replace(",", "")
                 if kind == "amount_k":
-                    amount_str = str(float(amount_str) * 1000)
+                    amount_str = str(int(float(amount_str) * 1000))
                 result.amount = amount_str
                 result.extracted["amount"] = amount_str
                 residual = residual[:m.start()] + " " + residual[m.end():]
@@ -90,8 +92,8 @@ class VoiceNormalizer:
         for pattern in _PHONE_PATTERNS:
             m = re.search(pattern, residual)
             if m:
-                number = m.group(1)
-                result.phone_number = f"+91{number}"
+                digits = re.sub(r"\D", "", m.group(1))
+                result.phone_number = f"+91{digits}"
                 result.extracted["number"] = result.phone_number
                 residual = residual[:m.start()] + " " + residual[m.end():]
                 break
