@@ -4,7 +4,7 @@ import shutil
 import tempfile
 import subprocess
 import uvicorn
-from fastapi import FastAPI, UploadFile, Form
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 import logging
 
@@ -55,12 +55,15 @@ async def startup_event():
         logger.error(f"Failed to load ASR model: {e}")
 
 @app.post("/transcribe")
-async def transcribe(audio_file: UploadFile, language: str = Form("en")):
+async def transcribe(request: Request, language: str = "en"):
     if not asr_model:
         return JSONResponse({"error": "Model not loaded"}, status_code=500)
         
     try:
-        audio_bytes = await audio_file.read()
+        audio_bytes = await request.body()
+        if not audio_bytes:
+            return JSONResponse({"error": "Empty body"}, status_code=400)
+            
         with tempfile.NamedTemporaryFile(suffix=".input", delete=False) as tf:
             tf.write(audio_bytes)
             raw_path = tf.name

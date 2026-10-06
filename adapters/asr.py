@@ -122,9 +122,12 @@ class IndicTranscribeFlexASR:
         if server_url:
             try:
                 async with httpx.AsyncClient(timeout=30.0) as client:
-                    files = {'audio_file': ('audio.webm', audio_bytes, 'audio/webm')}
-                    data = {'language': language or self.source_lang}
-                    resp = await client.post(f"{server_url}/transcribe", data=data, files=files)
+                    lang_param = language or self.source_lang
+                    resp = await client.post(
+                        f"{server_url}/transcribe?language={lang_param}", 
+                        content=audio_bytes,
+                        headers={"Content-Type": "audio/webm"}
+                    )
                     resp.raise_for_status()
                     text = resp.json().get("text", "")
                     logger.info("ASR server transcript: '%s'", text[:80])
