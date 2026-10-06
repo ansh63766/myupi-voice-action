@@ -627,7 +627,8 @@
                     'font-size:14px; cursor:pointer; pointer-events:all; position:relative; z-index:200; width:100%;';
 
                 // Plain closure — no HTML escaping, no JSON.parse, no inline handler.
-                btn.addEventListener('click', function(e) {
+                function handleDisambigTap(e) {
+                    e.preventDefault();
                     e.stopPropagation();
                     const payload = {
                         slot: slotName,
@@ -636,7 +637,9 @@
                     };
                     console.log('[disambig tap] FIRED', payload);
                     sendChatMessage(null, payload);
-                });
+                }
+                btn.addEventListener('click', handleDisambigTap);
+                btn.addEventListener('touchend', handleDisambigTap);
                 
                 list.appendChild(btn);
             });
