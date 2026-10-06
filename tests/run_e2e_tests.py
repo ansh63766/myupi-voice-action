@@ -51,8 +51,11 @@ def run_tests():
 
             if data.get("disambiguation_options"):
                 print("   [Options List:]")
-                for k, v in data["disambiguation_options"].items():
-                    print(f"   - {k}")
+                for slot, opt_list in data["disambiguation_options"].items():
+                    print(f"   Slot: {slot}")
+                    for opt in opt_list:
+                        lbl = opt.get("resolved_label", opt.get("resolved_id"))
+                        print(f"     • {lbl} (id={opt.get('resolved_id')})")
             
             if data.get("confirmation_card"):
                 print(f"   [Confirmation Card Rendered]")
@@ -74,9 +77,10 @@ def run_tests():
         if data.get("disambiguation_options"):
             # Select the first option
             slot_name = list(data["disambiguation_options"].keys())[0]
-            options = data["disambiguation_options"][slot_name]
-            first_opt_id = list(options.keys())[0]
-            first_opt_label = options[first_opt_id]
+            options_list = data["disambiguation_options"][slot_name]
+            first_opt = options_list[0]
+            first_opt_id = first_opt.get("resolved_id")
+            first_opt_label = first_opt.get("resolved_label", first_opt_id)
             
             data = chat("", entity={"slot": slot_name, "id": first_opt_id, "label": first_opt_label})
         
@@ -106,9 +110,10 @@ def run_tests():
         data = chat("Raise a complaint for a payment")
         if data.get("disambiguation_options"):
             slot_name = list(data["disambiguation_options"].keys())[0]
-            options = data["disambiguation_options"][slot_name]
-            first_opt_id = list(options.keys())[0]
-            first_opt_label = options[first_opt_id]
+            options_list = data["disambiguation_options"][slot_name]
+            first_opt = options_list[0]
+            first_opt_id = first_opt.get("resolved_id")
+            first_opt_label = first_opt.get("resolved_label", first_opt_id)
             data = chat("", entity={"slot": slot_name, "id": first_opt_id, "label": first_opt_label})
             
             if data.get("confirmation_card"):

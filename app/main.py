@@ -312,28 +312,39 @@ async def chat(req: ChatRequest, db: AsyncSession = Depends(get_db)):
                 # Check if their text looks like it matches one of the options (e.g. "Swiggy One").
                 # If it doesn't clearly select an option, treat it as a FRESH request.
                 slot_name = state.entity_resolution.needs_disambiguation[0]
-                options = state.entity_resolution.disambiguation_options.get(slot_name, {})
-                # Try to find a direct match in the option labels
+                raw_options = state.entity_resolution.disambiguation_options.get(slot_name, [])
                 matched_id = None
-                for opt_id, opt_label in options.items():
-                    # Check if the user's typed text is a substring of a label (case-insensitive)
-                    if msg_text.lower() in opt_label.lower():
-                        matched_id = opt_id
-                        break
+                matched_label = None
+
+                # raw_options is a list[ResolvedEntity]
+                if isinstance(raw_options, list):
+                    for cand in raw_options:
+                        c_id = getattr(cand, "resolved_id", None) or cand.get("resolved_id")
+                        c_lbl = getattr(cand, "resolved_label", None) or cand.get("resolved_label", "")
+                        if msg_text.lower() in str(c_lbl).lower():
+                            matched_id = c_id
+                            matched_label = c_lbl
+                            break
+                elif isinstance(raw_options, dict):
+                    for opt_id, opt_label in raw_options.items():
+                        if msg_text.lower() in str(opt_label).lower():
+                            matched_id = opt_id
+                            matched_label = opt_label
+                            break
 
                 if matched_id:
                     # User typed something that maps to an option — resolve it directly
                     from agents.types import ResolvedEntity
-                    opt_label = options[matched_id]
                     state.entity_resolution.resolved[slot_name] = ResolvedEntity(
                         slot_name=slot_name,
                         raw_text=msg_text,
                         resolved_id=matched_id,
-                        resolved_label=opt_label,
+                        resolved_label=matched_label or matched_id,
                         confidence=1.0,
                     )
                     state.entity_resolution.needs_disambiguation.remove(slot_name)
-                    del state.entity_resolution.disambiguation_options[slot_name]
+                    if slot_name in state.entity_resolution.disambiguation_options:
+                        del state.entity_resolution.disambiguation_options[slot_name]
                     state.policy = None
                     state.confirmation = None
                     state.needs_user_input = False
