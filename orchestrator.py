@@ -165,11 +165,28 @@ class Orchestrator:
         # ── Step 3: Slot Filling ───────────────────────────────────────────────
         logger.info("Orchestrator [Step 3]: Slot filling")
 
+        if selected_entity:
+            logger.info(
+                "Orchestrator: disambig tap received slot=%r id=%r has_entity_resolution=%s needs_disambig=%s",
+                selected_entity.get("slot") or selected_entity.get("slot_name"),
+                selected_entity.get("id") or selected_entity.get("resolved_id"),
+                state.entity_resolution is not None,
+                state.entity_resolution.needs_disambiguation if state.entity_resolution else None,
+            )
+
         # If user responded to a disambiguation (tap-to-select)
         if selected_entity and state.entity_resolution and state.entity_resolution.needs_disambiguation:
             slot_name = selected_entity.get("slot") or selected_entity.get("slot_name")
             entity_id = selected_entity.get("id") or selected_entity.get("resolved_id")
             entity_label = selected_entity.get("label") or selected_entity.get("resolved_label") or entity_id
+
+            # Match against the exact slot name stored in state (defensive)
+            if slot_name not in state.entity_resolution.needs_disambiguation:
+                # The frontend may have sent slot="merchant_name" while state tracks "mandate_id"
+                # Pick the first pending slot.
+                slot_name = state.entity_resolution.needs_disambiguation[0]
+                logger.info("Orchestrator: slot_name remapped to pending slot %r", slot_name)
+
             if slot_name and entity_id and state.entity_resolution:
                 from agents.types import ResolvedEntity
                 state.entity_resolution.resolved[slot_name] = ResolvedEntity(
@@ -180,8 +197,7 @@ class Orchestrator:
                     confidence=1.0,
                 )
                 state.entity_resolution.needs_disambiguation.remove(slot_name)
-                if slot_name in state.entity_resolution.disambiguation_options:
-                    del state.entity_resolution.disambiguation_options[slot_name]
+                state.entity_resolution.disambiguation_options.pop(slot_name, None)
                 
                 # Update audit chain
                 if state.audit.resolved_entity_ids is None:
@@ -193,6 +209,9 @@ class Orchestrator:
                 state.confirmation = None
                 state.needs_user_input = False
                 state.user_prompt = None
+                logger.info("Orchestrator: disambig tap merged → slot=%s id=%s", slot_name, entity_id)
+            else:
+                logger.warning("Orchestrator: disambig tap ignored (slot_name=%r entity_id=%r)", slot_name, entity_id)
         elif not selected_entity and state.entity_resolution and state.entity_resolution.needs_disambiguation and state.raw_input:
             slot_name = state.entity_resolution.needs_disambiguation[0]
             state.intent.extracted_slots = self.slot_filler.merge_new_input(

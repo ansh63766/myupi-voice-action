@@ -599,22 +599,39 @@
     }
 
     function addDisambiguationOptions(text, optionsMap) {
+        // Remove any existing unresolved disambig cards first
+        document.querySelectorAll('.disambig-card').forEach(el => el.remove());
+
         const div = document.createElement('div');
-        div.className = 'msg assistant';
+        div.className = 'msg assistant disambig-card';
         let html = text ? `<p style="margin-bottom:10px;font-weight:500;">${escapeHtml(text)}</p>` : '';
-        html += '<div style="display:flex; flex-direction:column; gap:8px; margin-top:10px;">';
+        html += '<div class="disambig-list" style="display:flex; flex-direction:column; gap:8px; margin-top:10px;"></div>';
+        
+        div.innerHTML = html;
+        const list = div.querySelector('.disambig-list');
         
         Object.keys(optionsMap).forEach(slotName => {
             optionsMap[slotName].forEach(opt => {
-                // Attach slot_name to the option object so the backend knows which slot it resolves
-                opt.slot_name = slotName;
-                const optJson = escapeHtml(JSON.stringify(opt));
-                html += `<button style="background:var(--primary); color:#fff; border:none; padding:10px 14px; border-radius:12px; font-weight:600; text-align:left; font-size:14px; cursor:pointer;" onclick="sendChatMessage(null, JSON.parse(this.dataset.opt))" data-opt="${optJson}">${escapeHtml(opt.resolved_label)}</button>`;
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.textContent = opt.resolved_label;
+                btn.style.cssText = 'background:var(--primary); color:#fff; border:none; padding:10px 14px; border-radius:12px; font-weight:600; text-align:left; font-size:14px; cursor:pointer;';
+
+                // Plain closure — no HTML escaping, no JSON.parse, no inline handler.
+                btn.addEventListener('click', () => {
+                    const payload = {
+                        slot: slotName,
+                        id: opt.resolved_id,
+                        label: opt.resolved_label
+                    };
+                    console.log('[disambig tap]', payload);
+                    sendChatMessage(null, payload);
+                });
+                
+                list.appendChild(btn);
             });
         });
-        html += '</div>';
         
-        div.innerHTML = html;
         document.getElementById('chat-messages').appendChild(div);
         div.scrollIntoView({behavior: "smooth"});
     }
@@ -933,7 +950,12 @@
             return;
         }
 
-        const payload = { token, conversation_id: convId, message: text, user_confirmed: (msgOverride==='__confirm__') };
+        const payload = { 
+            token, 
+            conversation_id: convId, 
+            message: text || "", 
+            user_confirmed: (msgOverride==='__confirm__') 
+        };
         if (selectedEntity) payload.selected_entity = selectedEntity;
 
         const r = await fetch('/api/chat', {

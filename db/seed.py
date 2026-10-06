@@ -46,6 +46,108 @@ def _txn_ref() -> str:
     import secrets, string
     return "".join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(16))
 
+# ── Bulk-transaction pools (realistic NPCI-style variety) ────────────────────
+
+_BULK_MERCHANTS = [
+    ("Amazon Pay", "amazon@apl"),
+    ("Flipkart", "fk@yesbank"),
+    ("Myntra", "myntra@upi"),
+    ("Ajio", "ajio@upi"),
+    ("Nykaa", "nykaa@upi"),
+    ("Swiggy", "swiggy@yesbank"),
+    ("Zomato", "zomato@axisbank"),
+    ("Blinkit", "blinkit@upi"),
+    ("BigBasket", "bigbasket@upi"),
+    ("Zepto", "zepto@upi"),
+    ("Uber", "uber@icici"),
+    ("Ola", "ola@hdfcbank"),
+    ("Rapido", "rapido@upi"),
+    ("IRCTC", "irctc@sbi"),
+    ("RedBus", "redbus@upi"),
+    ("Indigo", "indigo@upi"),
+    ("Indian Oil", "iocl@upi"),
+    ("HP Petrol", "hp@upi"),
+    ("Cafe Coffee Day", "ccd@upi"),
+    ("Starbucks", "starbucks@upi"),
+    ("Domino's", "dominos@upi"),
+    ("Pizza Hut", "pizzahut@upi"),
+    ("BookMyShow", "bms@kotak"),
+    ("PVR Cinemas", "pvr@upi"),
+    ("Netflix", "netflix@icici"),
+    ("Spotify", "spotify@icici"),
+    ("Hotstar", "hotstar@upi"),
+    ("Google Play", "gplay@upi"),
+    ("Apple Store", "apple@apl"),
+    ("Steam Games", "steam@upi"),
+    ("Dmart", "dmart@upi"),
+    ("Reliance Digital", "reliancedigital@upi"),
+    ("Croma", "croma@upi"),
+    ("Vijay Sales", "vijaysales@upi"),
+    ("Tanishq", "tanishq@upi"),
+    ("Apollo Pharmacy", "apollo@upi"),
+    ("MedPlus", "medplus@upi"),
+    ("1mg", "1mg@upi"),
+    ("PharmEasy", "pharmeasy@upi"),
+    ("Cult.fit", "cultfit@upi"),
+    ("Urban Company", "urbancompany@upi"),
+]
+
+_BULK_P2P = [
+    ("Ramesh Kumar", "ramesh.kumar@upi"),
+    ("Suresh Patel", "suresh.patel@upi"),
+    ("Anita Singh", "anita.singh@upi"),
+    ("Vijay Sharma", "vijay.sharma@upi"),
+    ("Priya Mehta", "priya.mehta@upi"),
+    ("Karthik Iyer", "karthik.iyer@upi"),
+    ("Deepak Verma", "deepak.verma@upi"),
+    ("Sunita Reddy", "sunita.reddy@upi"),
+    ("Mohit Gupta", "mohit.gupta@upi"),
+    ("Neha Joshi", "neha.joshi@upi"),
+]
+
+_BULK_BANKS = ["HDFC Bank", "SBI", "ICICI Bank", "Axis Bank", "Kotak Bank", "Yes Bank"]
+
+
+def _bulk_transactions(user_id: str, count: int = 120) -> list[dict]:
+    """Deterministic synthetic transaction history for one user."""
+    rng = random.Random(hash(user_id) & 0xFFFFFF)
+    txns: list[dict] = []
+    for _ in range(count):
+        is_p2p = rng.random() < 0.15
+        if is_p2p:
+            name, vpa = rng.choice(_BULK_P2P)
+            eligible = False  # P2P never chargeback-eligible
+        else:
+            name, vpa = rng.choice(_BULK_MERCHANTS)
+            eligible = rng.random() < 0.55
+
+        amount = round(rng.uniform(20.0, 8000.0), 2)
+        days = rng.randint(0, 89)
+        hours = rng.randint(0, 23)
+        minutes = rng.randint(0, 59)
+
+        roll = rng.random()
+        if roll < 0.90:
+            status = "SUCCESS"
+        elif roll < 0.96:
+            status = "FAILED"
+        else:
+            status = "PENDING"
+
+        txns.append({
+            "user_id": user_id,
+            "payee_name": name,
+            "payee_vpa": vpa,
+            "amount": amount,
+            "txn_type": "DEBIT",
+            "status": status,
+            "bank_name": rng.choice(_BULK_BANKS),
+            "created_at": _days_ago(days) - timedelta(hours=hours, minutes=minutes),
+            "eligible_chargeback": eligible and status == "SUCCESS",
+            "chargeback_raised": False,
+        })
+    return txns
+
 
 # ── Seed data definitions ──────────────────────────────────────────────────────
 
@@ -277,7 +379,7 @@ async def seed_db(session: AsyncSession) -> None:
     for m in MANDATES:
         session.add(Mandate(**m))
 
-    # Transactions — generate UUIDs and txn refs
+    # Hand-crafted transactions (canonical fixtures)
     for t in TRANSACTIONS:
         session.add(Transaction(
             id=str(uuid.uuid4()),
@@ -286,6 +388,16 @@ async def seed_db(session: AsyncSession) -> None:
             chargeback_raised=False,
             **t,
         ))
+
+    # ── Bulk synthetic history — realistic volume (100+ per user) ─────────────
+    for user_id in ("user-001", "user-002", "user-003"):
+        for t in _bulk_transactions(user_id, count=120):
+            session.add(Transaction(
+                id=str(uuid.uuid4()),
+                txn_ref=_txn_ref(),
+                currency="INR",
+                **t,
+            ))
 
     # Safety switches
     for ss in SAFETY_SWITCHES:
