@@ -621,16 +621,20 @@
                 const btn = document.createElement('button');
                 btn.type = 'button';
                 btn.textContent = opt.resolved_label;
-                btn.style.cssText = 'background:var(--primary); color:#fff; border:none; padding:10px 14px; border-radius:12px; font-weight:600; text-align:left; font-size:14px; cursor:pointer;';
+                btn.style.cssText =
+                    'background:var(--primary); color:#fff; border:none; padding:10px 14px;' +
+                    'border-radius:12px; font-weight:600; text-align:left;' +
+                    'font-size:14px; cursor:pointer; pointer-events:all; position:relative; z-index:200; width:100%;';
 
                 // Plain closure — no HTML escaping, no JSON.parse, no inline handler.
-                btn.addEventListener('click', () => {
+                btn.addEventListener('click', function(e) {
+                    e.stopPropagation();
                     const payload = {
                         slot: slotName,
                         id: opt.resolved_id,
                         label: opt.resolved_label
                     };
-                    console.log('[disambig tap]', payload);
+                    console.log('[disambig tap] FIRED', payload);
                     sendChatMessage(null, payload);
                 });
                 
