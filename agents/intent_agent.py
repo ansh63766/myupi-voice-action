@@ -98,6 +98,9 @@ User: "mere pichle transactions dikhao"
 User: "Raise chargeback for Zomato payment"
 {{"intent_label": "raise_chargeback", "extracted_slots": {{"payee": "Zomato"}}, "language": "en", "confidence": 0.95}}
 
+User: "Raise a complaint about a UPI payment"
+{{"intent_label": "raise_chargeback", "extracted_slots": {{}}, "language": "en", "confidence": 0.98}}
+
 User: "Stop Netflix"
 {{"intent_label": "ambiguous", "extracted_slots": {{"merchant_name": "Netflix"}}, "language": "en", "confidence": 0.92}}
 

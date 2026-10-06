@@ -1,124 +1,40 @@
-# MyUPI Voice Assistant — Project Overview
+# MyUPI Voice Action - Project Overview
 
-## 1. What is this Project About?
-**MyUPI** is an agentic, voice-first assistant designed for UPI (Unified Payments Interface) operations. It enables users to perform everyday payment inquiries, AutoPay mandate actions, and dispute resolutions naturally via voice (in Indian English and Indic languages) while strictly enforcing payment security, risk tiers, and anti-hallucination guardrails.
+## What is this project?
+MyUPI Voice Action is a prototype conversational AI agent built for the BHIM app. It enables users to interact with their UPI application using natural language via voice or text. The system aims to simplify complex app navigation and actions by allowing users to speak their intent (e.g., "Pause my Swiggy AutoPay", "Show me my last 5 transactions", "Verify this UPI ID").
 
-Rather than acting as a standard generic LLM chatbot, MyUPI implements a **deterministic, multi-agent pipeline** that couples speech-to-text (ASR) with policy checks, entity resolution, and database action execution.
+## What is MyUPI?
+MyUPI is a unified hub within the BHIM app that consolidates UPI features like AutoPay mandates, Transaction history, Payee management, and Safety controls. The AI Assistant lives within this hub, providing an intelligent conversational overlay that maps natural language directly to these features.
 
----
+## Architecture
+The system is built on an Orchestrator-Agent design pattern:
+1. **Frontend (UI)**: A mobile-first web interface (`index.html`) simulating the BHIM app's MyUPI hub. It connects to the backend via REST for initial rendering and WebSockets for real-time streaming voice/text chat.
+2. **Gateway**: Receives audio or text, normalizes it, and sends it to the Orchestrator.
+3. **Orchestrator (`orchestrator.py`)**: A state machine that drives the conversation forward through a pipeline of specialized agents:
+   - **Intent Agent**: Classifies user intent and extracts slots using an LLM.
+   - **Registry**: Maps the intent to an allowed Action (Tier 0 for read-only, Tier 1/2 for state-mutating actions).
+   - **Slot Filling Agent**: Ensures all required data (like Merchant Name or UPI ID) is collected. Prompts the user if missing.
+   - **Entity Resolver**: Maps raw extracted text (e.g., "swiggy") to actual database IDs using RapidFuzz or an LLM Semantic Rescue. Handles disambiguation if multiple matches are found.
+   - **Policy Agent**: Checks risk and enforces business logic (e.g., denying unsupported transactions, checking chargeback eligibility).
+   - **Confirmation Agent**: For state-mutating actions, renders a confirmation card before proceeding.
+   - **Execution Agent**: Mocks the execution of read actions (returning JSON) or writes (generating deep links to native app screens that request a UPI PIN).
+4. **Mock Database (`db/`)**: SQLite database populated with dummy data (Transactions, Mandates, Payees, etc.) to simulate a real user's UPI profile.
 
-## 2. Core Capabilities & Use Cases
-- **Transaction Inquiries**: View recent transactions, inspect specific merchant transactions (e.g., Swiggy, Zomato), and check statuses.
-- **AutoPay Mandate Management**: List active recurring payments, pause mandates temporarily, or revoke/cancel them.
-- **Dispute Resolution & Chargebacks**: Identify eligible disputed transactions and initiate formal chargeback requests.
-- **Security & Safety Switch**: Emergency safety lock to suspend UPI access, link/delink UPI numbers.
-- **UPI Support & FAQs**: Answer general UPI, PIN, and limit queries.
+## How it works
+1. **Input**: User speaks or types. If voice, ASR transcribes it.
+2. **Classification**: Intent Agent determines what the user wants to do.
+3. **Entity Resolution**: The system fuzzy-matches the user's words against their own database (e.g., finding the correct AutoPay mandate for "Netflix").
+4. **Disambiguation**: If the match is ambiguous (e.g., two mandates for "Amazon"), the system pauses and asks the user to tap or type the correct one.
+5. **Execution/Deep Linking**: 
+   - For read operations (e.g., "Show transactions"), the agent returns a structured payload that the UI renders beautifully inline.
+   - For write operations (e.g., "Pause AutoPay"), the agent returns a Deep Link. The UI intercepts this link, asks the user for their UPI PIN, and then securely calls the backend `/api/execute` endpoint to commit the change.
 
----
-
-## 3. Architecture & Pipeline Flow
-
-The system processes requests through a deterministic pipeline coordinated by a stateless **Orchestrator**:
-
-```
-[User Voice Input (Microphone)]
-                │
-                ▼
-[WebSocket Gateway: /api/voice]
-                │
-                ▼
-   [ASR Adapter: Bodhan-AI Indic-Transcribe-Flex]
-                │
-                ▼
-      [Voice Normalizer] (transliteration / cleaning)
-                │
-                ▼
-     [Orchestrator Pipeline]
-        ├── 1. Intent Classification Agent (LLM)
-        ├── 2. Registry Lookup Agent (Static Action Mapping & Risk Tiers)
-        ├── 3. Slot Filling Agent (Multi-turn parameter gathering)
-        ├── 4. Entity Resolver Agent (RapidFuzz over user accounts & merchants)
-        ├── 5. Policy & Risk Agent (Tier 0 direct / Tier 1 confirmation required)
-        ├── 6. Confirmation Agent (Explicit user confirmation cards for state mutations)
-        ├── 7. Execution Agent (Database mutations & mock BHIM actions)
-        └── 8. Audit Agent (Cryptographic hash chaining & action audit logs)
-                │
-                ▼
-[Response Payloads & Structured UI Cards sent back over WebSocket]
-```
-
-### Risk & Confirmation Model
-- **Tier 0 (Read-Only / FAQ)**: `API_DIRECT` — Executes immediately (e.g., viewing transactions).
-- **Tier 1 (State Mutations)**: `CONFIRMATION_CARD` — Requires explicit user confirmation via card/click before execution (e.g., pausing an AutoPay mandate).
-- **Tier 2 (Sensitive / Financial Transfer)**: Redirects or deep-links to app with PIN entry required (e.g., transaction replay, PIN change).
-
----
-
-## 4. Key Components & Technologies
-- **ASR (Speech-to-Text)**: `bodhan-ai/indic-transcribe-flex` (NVIDIA NeMo architecture), optimized for Indian accented English and Indic phonetics. Cached locally on disk (`/content/asr_model`) for fast initialization.
-- **LLM Reasoning**: OpenAI-compatible endpoint (hosted vLLM or local model) used strictly for intent classification and entity slot extraction.
-- **Entity Resolution**: RapidFuzz fuzzy matching for resolving spoken merchant names and contacts against local database records.
-- **Backend Framework**: FastAPI with WebSocket support for streaming audio packets and returning JSON event payloads.
-- **Database**: SQLite with SQLAlchemy AsyncIO (`aiosqlite`) tracking users, bank accounts, UPI numbers, transactions, mandates, and audit logs.
-- **Frontend UI**: Responsive HTML/CSS/JavaScript interface supporting live voice recording (WebRTC MediaRecorder), transaction history tables, and interactive confirmation cards.
-
----
-
-## 5. File Structure
-
-```
-myupi-voice-action/
-├── adapters/
-│   ├── asr.py                 # Bodhan-AI Indic ASR adapter with local cache loader
-│   ├── fuzzy.py               # RapidFuzz entity and slot matching
-│   └── llm.py                 # OpenAI-compatible LLM client interface
-├── agents/
-│   ├── audit_agent.py         # Cryptographic chain & audit log writer
-│   ├── confirmation_agent.py  # Renders interactive confirmation cards
-│   ├── entity_resolver.py     # Resolves merchants/payees to DB records
-│   ├── execution_agent.py     # Executes DB queries and business logic
-│   ├── intent_agent.py        # LLM-based intent and slot extractor
-│   ├── policy_agent.py        # Enforces NPCI/banking tier rules
-│   ├── registry_lookup.py     # Maps classified intents to action IDs
-│   ├── slot_filling_agent.py  # Tracks missing slots and multi-turn dialogs
-│   ├── support_agent.py       # RAG / FAQ retrieval support
-│   └── types.py               # Core Pydantic state models (PipelineState, etc.)
-├── app/
-│   ├── main.py                # FastAPI server, lifecycle startup, and REST endpoints
-│   ├── voice_ws.py            # WebSocket endpoint (/api/voice) for audio streaming
-│   └── templates/
-│       └── index.html         # Web application UI with microphone & chat cards
-├── config/
-│   ├── config.yaml            # Primary configuration file (LLM URL, ASR model)
-│   └── settings.py            # Pydantic Settings configuration loader
-├── db/
-│   ├── engine.py              # Async SQLAlchemy engine & session factory
-│   ├── models.py              # Database models (User, Transaction, Mandate, AuditLog)
-│   └── seed.py                # Initial mock data for testing (transactions, mandates)
-├── registry/
-│   ├── loader.py              # Registry YAML loader
-│   └── registry.yaml          # Action definitions, required slots, and risk tiers
-├── voice/
-│   ├── gateway.py             # Voice session tracking & rate limiting
-│   └── normalizer.py          # Transliteration and text cleanup
-├── .env.example               # Example environment variable file
-├── .gitignore                 # Standard Python/data gitignore
-├── context_project_overview.md# Complete project documentation and overview
-├── orchestrator.py            # Main pipeline coordinator
-└── requirements.txt           # Python application dependencies
-```
-
----
-
-## 6. How It Works (Step-by-Step Request Lifecycle)
-
-1. **User Speaks**: User presses the microphone in the web UI. MediaRecorder sends 250ms chunks of audio over WebSocket.
-2. **Audio Transcription**: Upon silence or user stopping, `adapters/asr.py` converts the raw audio buffer to 16kHz WAV and transcribes it using `indic-transcribe-flex`.
-3. **Intent & Slot Extraction**: `IntentAgent` queries the configured LLM to classify the user's intent (e.g., `pause_autopay`) and extract slots (e.g., `{"merchant_name": "Swiggy"}`).
-4. **Registry Lookup**: `RegistryLookupAgent` checks `registry.yaml` to retrieve the registered action (`mandate_pause`), required slots (`merchant_name`), and risk tier (Tier 1).
-5. **Entity Resolution**: `EntityResolverAgent` uses RapidFuzz to resolve "Swiggy" against active mandates for the authenticated user in the database.
-6. **Policy Evaluation**: `PolicyRiskAgent` notes that `mandate_pause` is Tier 1 and requires explicit confirmation.
-7. **Confirmation Prompt**: `ConfirmationAgent` formats a confirmation card payload (`"Do you want to pause your Swiggy AutoPay of ₹450/month?"`) and sends it over the WebSocket.
-8. **User Confirms**: The user clicks "Confirm" (or says "Yes").
-9. **Execution**: `ExecutionAgent` updates the mandate status to `PAUSED` in SQLite and logs the state transition.
-10. **Audit**: `AuditAgent` writes an immutable `AuditLog` entry tying together the session, transcript hash, policy tier, and outcome.
+## Key Files & Structure
+- `/app/main.py`: FastAPI server, REST routes, deep link execution endpoint.
+- `/app/voice_ws.py`: WebSocket handler for real-time voice and chat streaming.
+- `/app/templates/index.html`: The complete frontend UI, mimicking the BHIM app.
+- `/orchestrator.py`: The core state machine orchestrating the conversation pipeline.
+- `/agents/`: The specialized agents (Intent, Entity Resolver, Slot Filling, Execution, Policy).
+- `/registry/`: YAML configurations mapping intents to required slots and risk tiers.
+- `/db/`: SQLAlchemy models, seeds, and the SQLite DB file.
+- `/adapters/`: Wrappers for external AI services (LLM, ASR, TTS).

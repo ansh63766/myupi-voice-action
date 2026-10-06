@@ -283,19 +283,31 @@ async def chat(req: ChatRequest, db: AsyncSession = Depends(get_db)):
             state.needs_user_input = False
             state.done = False
         elif req.message.strip():
-            # User typed a reply to a slot prompt
+            # Update the raw_input so orchestrator knows the user typed something new
+            state.raw_input = req.message.strip()
+            
             if state.slot_fill and state.slot_fill.pending_request:
                 missing_slot = state.slot_fill.pending_request.missing_slot
                 state.intent.extracted_slots = _orchestrator.slot_filler.merge_new_input(
                     state.intent.extracted_slots, req.message, missing_slot
                 )
-            state.slot_fill = None
-            state.entity_resolution = None
-            state.confirmation = None
-            state.needs_user_input = False
-            state.user_prompt = None
-            state.error = None
-            state.done = False
+                state.slot_fill = None
+                state.entity_resolution = None
+                state.confirmation = None
+                state.needs_user_input = False
+                state.user_prompt = None
+                state.error = None
+                state.done = False
+            elif state.entity_resolution and state.entity_resolution.needs_disambiguation:
+                # User typed a reply to a disambiguation prompt.
+                # Do not clear state.entity_resolution here so orchestrator can handle it.
+                state.needs_user_input = False
+                state.done = False
+                state.error = None
+            else:
+                state.needs_user_input = False
+                state.done = False
+                state.error = None
     else:
         # Fresh request — start new pipeline
         _prune_states()  # evict old states before adding new one
