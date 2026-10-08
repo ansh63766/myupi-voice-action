@@ -948,20 +948,27 @@
         }
     }
 
+    let _isSending = false;  // guard against double-submit
     async function sendChatMessage(msgOverride = null, selectedEntity = null) {
+        if (_isSending) return;
+        _isSending = true;
+
         const input = document.getElementById('real-chat-input');
         const text = msgOverride || input.value.trim();
-        if(!text && !selectedEntity) return;
+        if(!text && !selectedEntity) { _isSending = false; return; }
         
         if (msgOverride !== '__confirm__' && !selectedEntity) {
             input.value = '';
             addChatMsg('user', text);
         } else if (selectedEntity) {
+            // Remove the disambig card now that the user tapped
+            document.querySelectorAll('.disambig-card').forEach(el => el.remove());
             addChatMsg('user', selectedEntity.resolved_label || selectedEntity.label || 'Selected');
         }
 
         if (!token || !convId) {
             addChatMsg('assistant', '⚠️ Please log in first.');
+            _isSending = false;
             return;
         }
 
@@ -987,6 +994,7 @@
             data = await r.json();
         } catch(e) {
             addChatMsg('assistant', '⚠️ ' + e.message);
+            _isSending = false;
             return;
         }
 
@@ -1008,16 +1016,27 @@
         }
         
         if (data.confirmation_card) {
-            addActionCard("Confirm Action", data.confirmation_card.text, "Confirm", () => {
+            addActionCard("Confirm Action", data.confirmation_card.text, "Confirm", (btn) => {
+                btn.disabled = true;
+                btn.textContent = 'Processing...';
                 sendChatMessage('__confirm__');
             });
         }
+
+        // Refresh mandate/txn lists if an action completed
+        if (data.done && !data.needs_input && !data.confirmation_card && !data.deep_link) {
+            loadMandates();
+            loadTransactions();
+        }
+
+        _isSending = false;
     }
     
     function addChatMsg(role, text) {
+        if (!text) return;
         const div = document.createElement('div');
         div.className = 'msg ' + role;
-        div.innerHTML = marked.parse(text);
+        div.innerHTML = marked.parse(String(text));
         document.getElementById('chat-messages').appendChild(div);
         div.scrollIntoView({behavior: "smooth"});
     }
@@ -1026,7 +1045,8 @@
         const div = document.createElement('div');
         div.className = 'msg assistant';
         div.innerHTML = `<div style="font-weight:600; margin-bottom:8px;">${title}</div><div style="font-size:13px; margin-bottom:12px;">${text}</div><button style="background:var(--primary); color:#fff; border:none; padding:8px 16px; border-radius:16px; font-weight:600;">${btnText}</button>`;
-        div.querySelector('button').onclick = callback;
+        const btn = div.querySelector('button');
+        btn.onclick = () => callback(btn);
         document.getElementById('chat-messages').appendChild(div);
         div.scrollIntoView({behavior: "smooth"});
     }
