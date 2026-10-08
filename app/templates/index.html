@@ -633,6 +633,8 @@
                     const payload = {
                         slot: slotName,
                         id: opt.resolved_id,
+                        resolved_id: opt.resolved_id,
+                        resolved_label: opt.resolved_label,
                         label: opt.resolved_label
                     };
                     console.log('[disambig tap] FIRED', payload);
@@ -955,7 +957,7 @@
             input.value = '';
             addChatMsg('user', text);
         } else if (selectedEntity) {
-            addChatMsg('user', selectedEntity.resolved_label);
+            addChatMsg('user', selectedEntity.resolved_label || selectedEntity.label || 'Selected');
         }
 
         if (!token || !convId) {
