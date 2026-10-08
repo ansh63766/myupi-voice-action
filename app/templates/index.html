@@ -1123,13 +1123,18 @@
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({token, action: actionType, id: id, pin: pin})
                 });
-                if (!r.ok) { alert("Action failed."); return; }
+                if (!r.ok) {
+                    let errMsg = `Server error ${r.status}`;
+                    try { const e = await r.json(); errMsg = e.detail || errMsg; } catch(_) {}
+                    alert(`❌ Action failed: ${errMsg}`);
+                    return;
+                }
                 alert(`✅ ${actionName} executed successfully!`);
                 // Reload data
                 loadMandates();
                 loadTransactions();
             } catch(e) {
-                alert("Action failed.");
+                alert("Action failed: " + e.message);
             }
         };
 
